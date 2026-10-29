@@ -4,8 +4,7 @@
 
 #include "Window.hpp"
 
-int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int showCommand)
-{
+int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int showCommand) {
     INITCOMMONCONTROLSEX commonControls = {};
     commonControls.dwSize = sizeof(commonControls);
     commonControls.dwICC = ICC_STANDARD_CLASSES | ICC_PROGRESS_CLASS;
@@ -17,18 +16,14 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int showCommand)
     int exitCode = 1;
     {
         fullcopy::Window window(instance);
-        if (window.create(showCommand))
-        {
+        if (window.create(showCommand)) {
             exitCode = window.run();
-        }
-        else
-        {
+        } else {
             MessageBoxW(nullptr, L"The main window could not be created.", L"FullCopy", MB_OK | MB_ICONERROR);
         }
     }
 
-    if (SUCCEEDED(comResult))
-    {
+    if (SUCCEEDED(comResult)) {
         CoUninitialize();
     }
     return exitCode;

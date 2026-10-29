@@ -16,27 +16,23 @@ namespace
 const int CLIENT_WIDTH  = 522;
 const int CLIENT_HEIGHT = 222;
 
-std::wstring trim(const std::wstring& text)
-{
+std::wstring trim(const std::wstring& text) {
     const wchar_t* const SPACES = L" \t\r\n\"";
     const std::size_t first = text.find_first_not_of(SPACES);
-    if (first == std::wstring::npos)
-    {
+    if (first == std::wstring::npos) {
         return std::wstring();
     }
     const std::size_t last = text.find_last_not_of(SPACES);
     return text.substr(first, last - first + 1);
 }
 
-bool equalsIgnoreCase(const std::wstring& first, const std::wstring& second)
-{
+bool equalsIgnoreCase(const std::wstring& first, const std::wstring& second) {
     return CompareStringOrdinal(first.c_str(), static_cast<int>(first.size()),
                                 second.c_str(), static_cast<int>(second.size()),
                                 TRUE) == CSTR_EQUAL;
 }
 
-bool startsWithIgnoreCase(const std::wstring& text, const std::wstring& prefix)
-{
+bool startsWithIgnoreCase(const std::wstring& text, const std::wstring& prefix) {
     return text.size() >= prefix.size() && equalsIgnoreCase(text.substr(0, prefix.size()), prefix);
 }
 
@@ -56,22 +52,18 @@ Window::Window(HINSTANCE instance)
       statusLabel_(nullptr),
       workerThread_(nullptr),
       cancelRequested_(0),
-      closePending_(false)
-{
+      closePending_(false) {
 }
 
-Window::~Window()
-{
-    if (workerThread_ != nullptr)
-    {
+Window::~Window() {
+    if (workerThread_ != nullptr) {
         InterlockedExchange(&cancelRequested_, 1);
         WaitForSingleObject(workerThread_, INFINITE);
         CloseHandle(workerThread_);
     }
 }
 
-bool Window::create(int showCommand)
-{
+bool Window::create(int showCommand) {
     WNDCLASSEXW windowClass = {};
     windowClass.cbSize = sizeof(windowClass);
     windowClass.lpfnWndProc = windowProcedure;
@@ -81,8 +73,7 @@ bool Window::create(int showCommand)
     windowClass.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_BTNFACE + 1);
     windowClass.lpszClassName = CLASS_NAME;
 
-    if (RegisterClassExW(&windowClass) == 0)
-    {
+    if (RegisterClassExW(&windowClass) == 0) {
         return false;
     }
 
@@ -93,8 +84,7 @@ bool Window::create(int showCommand)
     CreateWindowExW(0, CLASS_NAME, L"FullCopy", style, CW_USEDEFAULT, CW_USEDEFAULT,
                     rect.right - rect.left, rect.bottom - rect.top,
                     nullptr, nullptr, instance_, this);
-    if (window_ == nullptr)
-    {
+    if (window_ == nullptr) {
         return false;
     }
 
@@ -104,13 +94,10 @@ bool Window::create(int showCommand)
     return true;
 }
 
-int Window::run()
-{
+int Window::run() {
     MSG message;
-    while (GetMessageW(&message, nullptr, 0, 0) > 0)
-    {
-        if (window_ == nullptr || !IsDialogMessageW(window_, &message))
-        {
+    while (GetMessageW(&message, nullptr, 0, 0) > 0) {
+        if (window_ == nullptr || !IsDialogMessageW(window_, &message)) {
             TranslateMessage(&message);
             DispatchMessageW(&message);
         }
@@ -118,14 +105,11 @@ int Window::run()
     return static_cast<int>(message.wParam);
 }
 
-void Window::updateProgressBar(int percentage)
-{
-    if (percentage < 0)
-    {
+void Window::updateProgressBar(int percentage) {
+    if (percentage < 0) {
         percentage = 0;
     }
-    if (percentage > 100)
-    {
+    if (percentage > 100) {
         percentage = 100;
     }
 
@@ -134,29 +118,23 @@ void Window::updateProgressBar(int percentage)
     setStatus(L"Copying... " + std::to_wstring(loadPercentage_) + L"%");
 }
 
-LRESULT CALLBACK Window::windowProcedure(HWND window, UINT message, WPARAM wParam, LPARAM lParam)
-{
+LRESULT CALLBACK Window::windowProcedure(HWND window, UINT message, WPARAM wParam, LPARAM lParam) {
     Window* self = nullptr;
 
-    if (message == WM_NCCREATE)
-    {
+    if (message == WM_NCCREATE) {
         const CREATESTRUCTW* createStruct = reinterpret_cast<CREATESTRUCTW*>(lParam);
         self = static_cast<Window*>(createStruct->lpCreateParams);
         SetWindowLongPtrW(window, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(self));
         self->window_ = window;
-    }
-    else
-    {
+    } else {
         self = reinterpret_cast<Window*>(GetWindowLongPtrW(window, GWLP_USERDATA));
     }
 
-    if (self == nullptr)
-    {
+    if (self == nullptr) {
         return DefWindowProcW(window, message, wParam, lParam);
     }
 
-    if (message == WM_NCDESTROY)
-    {
+    if (message == WM_NCDESTROY) {
         SetWindowLongPtrW(window, GWLP_USERDATA, 0);
         self->window_ = nullptr;
         return DefWindowProcW(window, message, wParam, lParam);
@@ -165,13 +143,10 @@ LRESULT CALLBACK Window::windowProcedure(HWND window, UINT message, WPARAM wPara
     return self->handleMessage(message, wParam, lParam);
 }
 
-LRESULT Window::handleMessage(UINT message, WPARAM wParam, LPARAM lParam)
-{
-    switch (message)
-    {
+LRESULT Window::handleMessage(UINT message, WPARAM wParam, LPARAM lParam) {
+    switch (message) {
     case WM_COMMAND:
-        switch (LOWORD(wParam))
-        {
+        switch (LOWORD(wParam)) {
         case ID_BROWSE_SOURCE_BUTTON:
             onBrowse(sourceDirectory_);
             return 0;
@@ -180,8 +155,7 @@ LRESULT Window::handleMessage(UINT message, WPARAM wParam, LPARAM lParam)
             return 0;
         case IDOK: // Enter key.
         case ID_START_BUTTON:
-            if (IsWindowEnabled(startButton_))
-            {
+            if (IsWindowEnabled(startButton_)) {
                 onStart();
             }
             return 0;
@@ -218,8 +192,7 @@ LRESULT Window::handleMessage(UINT message, WPARAM wParam, LPARAM lParam)
     return DefWindowProcW(window_, message, wParam, lParam);
 }
 
-void Window::createControls()
-{
+void Window::createControls() {
     auto createControl = [this](DWORD extendedStyle, const wchar_t* className, const wchar_t* text,
                                 DWORD style, int x, int y, int width, int height, int id) {
         return CreateWindowExW(extendedStyle, className, text, WS_CHILD | WS_VISIBLE | style,
@@ -253,11 +226,9 @@ void Window::createControls()
     applyUiFont(window_);
 }
 
-void Window::onBrowse(HWND targetEdit)
-{
+void Window::onBrowse(HWND targetEdit) {
     IFileOpenDialog* dialog = nullptr;
-    if (FAILED(CoCreateInstance(CLSID_FileOpenDialog, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&dialog))))
-    {
+    if (FAILED(CoCreateInstance(CLSID_FileOpenDialog, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&dialog)))) {
         showError(L"The folder dialog could not be opened.");
         return;
     }
@@ -268,14 +239,11 @@ void Window::onBrowse(HWND targetEdit)
     dialog->SetTitle(targetEdit == sourceDirectory_ ? L"Select the source directory"
                                                     : L"Select the destination directory");
 
-    if (SUCCEEDED(dialog->Show(window_)))
-    {
+    if (SUCCEEDED(dialog->Show(window_))) {
         IShellItem* item = nullptr;
-        if (SUCCEEDED(dialog->GetResult(&item)))
-        {
+        if (SUCCEEDED(dialog->GetResult(&item))) {
             PWSTR path = nullptr;
-            if (SUCCEEDED(item->GetDisplayName(SIGDN_FILESYSPATH, &path)))
-            {
+            if (SUCCEEDED(item->GetDisplayName(SIGDN_FILESYSPATH, &path))) {
                 SetWindowTextW(targetEdit, path);
                 CoTaskMemFree(path);
             }
@@ -286,18 +254,15 @@ void Window::onBrowse(HWND targetEdit)
     dialog->Release();
 }
 
-void Window::onStart()
-{
-    if (workerThread_ != nullptr)
-    {
+void Window::onStart() {
+    if (workerThread_ != nullptr) {
         return;
     }
 
     const std::wstring source = trim(getWindowString(sourceDirectory_));
     const std::wstring destination = trim(getWindowString(destinationDirectory_));
 
-    if (source.empty() || destination.empty())
-    {
+    if (source.empty() || destination.empty()) {
         showError(L"Select both the source and the destination directories.");
         return;
     }
@@ -307,21 +272,18 @@ void Window::onStart()
     const std::wstring& destinationRoot = copier_.getDestinationRoot();
 
     const DWORD attributes = GetFileAttributesW(sourceRoot.c_str());
-    if (attributes == INVALID_FILE_ATTRIBUTES || (attributes & FILE_ATTRIBUTE_DIRECTORY) == 0)
-    {
+    if (attributes == INVALID_FILE_ATTRIBUTES || (attributes & FILE_ATTRIBUTE_DIRECTORY) == 0) {
         showError(L"The source directory does not exist.");
         return;
     }
 
-    if (equalsIgnoreCase(sourceRoot, destinationRoot))
-    {
+    if (equalsIgnoreCase(sourceRoot, destinationRoot)) {
         showError(L"The source and the destination directories must be different.");
         return;
     }
 
     const std::wstring sourcePrefix = sourceRoot.back() == L'\\' ? sourceRoot : sourceRoot + L'\\';
-    if (startsWithIgnoreCase(destinationRoot, sourcePrefix))
-    {
+    if (startsWithIgnoreCase(destinationRoot, sourcePrefix)) {
         showError(L"The destination directory can not be inside the source directory.");
         return;
     }
@@ -333,22 +295,18 @@ void Window::onStart()
     setStatus(L"Reading the source directory...");
 
     workerThread_ = CreateThread(nullptr, 0, copyThread, this, 0, nullptr);
-    if (workerThread_ == nullptr)
-    {
+    if (workerThread_ == nullptr) {
         setControlsEnabled(true);
         showError(L"The copy could not be started.");
     }
 }
 
-void Window::onAccept()
-{
+void Window::onAccept() {
     SendMessageW(window_, WM_CLOSE, 0, 0);
 }
 
-void Window::onClose()
-{
-    if (workerThread_ != nullptr)
-    {
+void Window::onClose() {
+    if (workerThread_ != nullptr) {
         // The window is destroyed when the copy thread confirms it has stopped.
         InterlockedExchange(&cancelRequested_, 1);
         closePending_ = true;
@@ -360,10 +318,8 @@ void Window::onClose()
 }
 
 // Runs on the main thread while the copy thread waits for the answer.
-LRESULT Window::onRenameRequest(std::size_t entryIndex)
-{
-    if (closePending_)
-    {
+LRESULT Window::onRenameRequest(std::size_t entryIndex) {
+    if (closePending_) {
         return FALSE;
     }
 
@@ -374,12 +330,10 @@ LRESULT Window::onRenameRequest(std::size_t entryIndex)
     return renamed ? TRUE : FALSE;
 }
 
-void Window::onCopyFinished(std::size_t failed, std::size_t skipped)
-{
+void Window::onCopyFinished(std::size_t failed, std::size_t skipped) {
     finishWorker();
 
-    if (closePending_)
-    {
+    if (closePending_) {
         DestroyWindow(window_);
         return;
     }
@@ -388,13 +342,11 @@ void Window::onCopyFinished(std::size_t failed, std::size_t skipped)
     setStatus(L"Finished.");
 
     std::wstring text = L"The copy has finished.";
-    if (skipped > 0)
-    {
+    if (skipped > 0) {
         text += L"\n\nNot copied (skipped by the user or impossible to shorten): "
               + std::to_wstring(skipped) + L" item(s), with all their content.";
     }
-    if (failed > 0)
-    {
+    if (failed > 0) {
         text += L"\n\nItems that could not be copied because of an error: " + std::to_wstring(failed) + L".";
     }
 
@@ -402,12 +354,10 @@ void Window::onCopyFinished(std::size_t failed, std::size_t skipped)
     MessageBoxW(window_, text.c_str(), L"FullCopy", MB_OK | icon);
 }
 
-void Window::onCopyFailed()
-{
+void Window::onCopyFailed() {
     finishWorker();
 
-    if (closePending_)
-    {
+    if (closePending_) {
         DestroyWindow(window_);
         return;
     }
@@ -417,18 +367,15 @@ void Window::onCopyFailed()
     showError(L"The source directory could not be read or the destination directory could not be created.");
 }
 
-void Window::finishWorker()
-{
-    if (workerThread_ != nullptr)
-    {
+void Window::finishWorker() {
+    if (workerThread_ != nullptr) {
         WaitForSingleObject(workerThread_, INFINITE);
         CloseHandle(workerThread_);
         workerThread_ = nullptr;
     }
 }
 
-void Window::setControlsEnabled(bool enabled)
-{
+void Window::setControlsEnabled(bool enabled) {
     const BOOL value = enabled ? TRUE : FALSE;
     EnableWindow(sourceDirectory_, value);
     EnableWindow(destinationDirectory_, value);
@@ -438,26 +385,21 @@ void Window::setControlsEnabled(bool enabled)
     EnableWindow(acceptButton_, value);
 }
 
-void Window::setStatus(const std::wstring& text)
-{
+void Window::setStatus(const std::wstring& text) {
     SetWindowTextW(statusLabel_, text.c_str());
 }
 
-void Window::showError(const std::wstring& text)
-{
+void Window::showError(const std::wstring& text) {
     MessageBoxW(window_, text.c_str(), L"FullCopy", MB_OK | MB_ICONERROR);
 }
 
-DWORD WINAPI Window::copyThread(LPVOID parameter)
-{
+DWORD WINAPI Window::copyThread(LPVOID parameter) {
     static_cast<Window*>(parameter)->runCopy();
     return 0;
 }
 
-void Window::runCopy()
-{
-    if (!copier_.load())
-    {
+void Window::runCopy() {
+    if (!copier_.load()) {
         PostMessageW(window_, WM_APP_COPY_FAILED, 0, 0);
         return;
     }
@@ -467,37 +409,31 @@ void Window::runCopy()
     std::size_t skipped = 0;
     int lastPercentage = -1;
 
-    for (std::size_t i = 0; i < count && cancelRequested_ == 0; ++i)
-    {
+    for (std::size_t i = 0; i < count && cancelRequested_ == 0; ++i) {
         // Ask for a new name until the path fits. SendMessage blocks this
         // thread until the user answers in the Decision window.
-        while (!copier_.check(i))
-        {
+        while (!copier_.check(i)) {
             if (copier_.getMaxNameLength(i) == 0
                 || cancelRequested_ != 0
-                || SendMessageW(window_, WM_APP_RENAME_REQUEST, static_cast<WPARAM>(i), 0) == FALSE)
-            {
+                || SendMessageW(window_, WM_APP_RENAME_REQUEST, static_cast<WPARAM>(i), 0) == FALSE) {
                 copier_.skip(i);
                 ++skipped;
                 break;
             }
         }
 
-        if (!copier_.copy(i))
-        {
+        if (!copier_.copy(i)) {
             ++failed;
         }
 
         const int percentage = static_cast<int>((i + 1) * 100 / count);
-        if (percentage != lastPercentage)
-        {
+        if (percentage != lastPercentage) {
             PostMessageW(window_, WM_APP_PROGRESS, static_cast<WPARAM>(percentage), 0);
             lastPercentage = percentage;
         }
     }
 
-    if (count == 0)
-    {
+    if (count == 0) {
         PostMessageW(window_, WM_APP_PROGRESS, 100, 0);
     }
 

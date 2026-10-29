@@ -27,20 +27,16 @@ Decision::Decision(HINSTANCE instance, Copier& copier, std::size_t entryIndex)
       textBox_(nullptr),
       acceptButton_(nullptr),
       renamed_(false),
-      running_(false)
-{
+      running_(false) {
 }
 
-Decision::~Decision()
-{
-    if (window_ != nullptr)
-    {
+Decision::~Decision() {
+    if (window_ != nullptr) {
         selfDestroy();
     }
 }
 
-bool Decision::show(HWND parent)
-{
+bool Decision::show(HWND parent) {
     parent_ = parent;
     registerClass(instance_);
 
@@ -60,8 +56,7 @@ bool Decision::show(HWND parent)
 
     window_ = CreateWindowExW(extendedStyle, CLASS_NAME, L"Name too long", style,
                               x, y, width, height, parent_, nullptr, instance_, this);
-    if (window_ == nullptr)
-    {
+    if (window_ == nullptr) {
         return false;
     }
 
@@ -74,58 +69,48 @@ bool Decision::show(HWND parent)
     // Modal loop: runs until the window destroys itself.
     running_ = true;
     MSG message;
-    while (running_)
-    {
+    while (running_) {
         const BOOL result = GetMessageW(&message, nullptr, 0, 0);
-        if (result == 0)
-        {
+        if (result == 0) {
             // Give WM_QUIT back to the main loop.
             PostQuitMessage(static_cast<int>(message.wParam));
             break;
         }
-        if (result == -1)
-        {
+        if (result == -1) {
             break;
         }
 
-        if (!IsDialogMessageW(window_, &message))
-        {
+        if (!IsDialogMessageW(window_, &message)) {
             TranslateMessage(&message);
             DispatchMessageW(&message);
         }
     }
 
-    if (window_ != nullptr)
-    {
+    if (window_ != nullptr) {
         selfDestroy();
     }
     return renamed_;
 }
 
-void Decision::selfDestroy()
-{
+void Decision::selfDestroy() {
     running_ = false;
 
     // Enable the parent before destroying, so Windows gives it the focus back.
-    if (parent_ != nullptr)
-    {
+    if (parent_ != nullptr) {
         EnableWindow(parent_, TRUE);
     }
 
-    if (window_ != nullptr)
-    {
+    if (window_ != nullptr) {
         DestroyWindow(window_);
         window_ = nullptr;
     }
 
-    if (parent_ != nullptr)
-    {
+    if (parent_ != nullptr) {
         SetForegroundWindow(parent_);
     }
 }
 
-void Decision::registerClass(HINSTANCE instance)
-{
+void Decision::registerClass(HINSTANCE instance) {
     WNDCLASSEXW windowClass = {};
     windowClass.cbSize = sizeof(windowClass);
     windowClass.lpfnWndProc = windowProcedure;
@@ -138,29 +123,23 @@ void Decision::registerClass(HINSTANCE instance)
     RegisterClassExW(&windowClass);
 }
 
-LRESULT CALLBACK Decision::windowProcedure(HWND window, UINT message, WPARAM wParam, LPARAM lParam)
-{
+LRESULT CALLBACK Decision::windowProcedure(HWND window, UINT message, WPARAM wParam, LPARAM lParam) {
     Decision* self = nullptr;
 
-    if (message == WM_NCCREATE)
-    {
+    if (message == WM_NCCREATE) {
         const CREATESTRUCTW* createStruct = reinterpret_cast<CREATESTRUCTW*>(lParam);
         self = static_cast<Decision*>(createStruct->lpCreateParams);
         SetWindowLongPtrW(window, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(self));
         self->window_ = window;
-    }
-    else
-    {
+    } else {
         self = reinterpret_cast<Decision*>(GetWindowLongPtrW(window, GWLP_USERDATA));
     }
 
-    if (self == nullptr)
-    {
+    if (self == nullptr) {
         return DefWindowProcW(window, message, wParam, lParam);
     }
 
-    if (message == WM_NCDESTROY)
-    {
+    if (message == WM_NCDESTROY) {
         SetWindowLongPtrW(window, GWLP_USERDATA, 0);
         self->window_ = nullptr;
         return DefWindowProcW(window, message, wParam, lParam);
@@ -169,13 +148,10 @@ LRESULT CALLBACK Decision::windowProcedure(HWND window, UINT message, WPARAM wPa
     return self->handleMessage(message, wParam, lParam);
 }
 
-LRESULT Decision::handleMessage(UINT message, WPARAM wParam, LPARAM lParam)
-{
-    switch (message)
-    {
+LRESULT Decision::handleMessage(UINT message, WPARAM wParam, LPARAM lParam) {
+    switch (message) {
     case WM_COMMAND:
-        switch (LOWORD(wParam))
-        {
+        switch (LOWORD(wParam)) {
         case IDOK: // Accept button or Enter key.
             onAccept();
             return 0;
@@ -193,8 +169,7 @@ LRESULT Decision::handleMessage(UINT message, WPARAM wParam, LPARAM lParam)
     return DefWindowProcW(window_, message, wParam, lParam);
 }
 
-void Decision::createControls()
-{
+void Decision::createControls() {
     const CopyEntry& entry = copier_.getEntry(entryIndex_);
     const std::wstring currentName = copier_.getDestinationName(entryIndex_);
     const std::size_t maxLength = copier_.getMaxNameLength(entryIndex_);
@@ -224,13 +199,11 @@ void Decision::createControls()
     applyUiFont(window_);
 }
 
-void Decision::onAccept()
-{
+void Decision::onAccept() {
     const std::wstring newName = getWindowString(textBox_);
     std::wstring error;
 
-    switch (copier_.rename(entryIndex_, newName))
-    {
+    switch (copier_.rename(entryIndex_, newName)) {
     case RenameResult::Ok:
         renamed_ = true;
         selfDestroy();
