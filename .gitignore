@@ -1,0 +1,21 @@
+# Build output
+build/
+bin/
+*.o
+*.d
+*.res
+*.exe
+
+# Editors and IDEs
+.vscode/
+.idea/
+*.swp
+*~
+
+# Operating system files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Local tool settings
+.claude/settings.local.json
