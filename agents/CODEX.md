@@ -44,3 +44,6 @@ the documentation up to date.
   (`-Wall -Wextra`).
 - Class definitions in `include/` (`.hpp`), implementations in `src/` (`.cpp`).
 - All code, identifiers and comments are written in English.
+- Code style: an opening brace that follows a closing parenthesis, `else` or `do` goes on the
+  same line, separated by one space: `) {`, `) const {`, `} else {`, `} else if (...) {`, `do {`,
+  `} while (...);`. Braces of `namespace`, `class`, `struct` and `enum` stay on their own line.
