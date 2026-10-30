@@ -15,6 +15,24 @@ namespace fullcopy {
                 && (attributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
         }
 
+        DWORD CALLBACK copyProgress(
+            LARGE_INTEGER,
+            LARGE_INTEGER,
+            LARGE_INTEGER,
+            LARGE_INTEGER,
+            DWORD,
+            DWORD,
+            HANDLE,
+            HANDLE,
+            LPVOID context
+        ) {
+            const auto* cancellation = static_cast<const std::atomic_bool*>(context);
+            if (cancellation != nullptr && cancellation->load()) {
+                return PROGRESS_CANCEL;
+            }
+            return PROGRESS_CONTINUE;
+        }
+
         class FindHandle {
         public:
             explicit FindHandle(HANDLE handle) : handle_(handle) {}
@@ -81,7 +99,7 @@ namespace fullcopy {
         entries_.clear();
     }
 
-    bool Copier::load() {
+    bool Copier::load(std::atomic_bool* cancellation) {
         entries_.clear();
 
         const DWORD attributes = GetFileAttributesW(getFullSourcePath(L"").c_str());
@@ -98,7 +116,7 @@ namespace fullcopy {
             return false;
         }
 
-        if (!scanDirectory(L"")) {
+        if (!scanDirectory(L"", cancellation)) {
             entries_.clear();
             return false;
         }
@@ -120,7 +138,11 @@ namespace fullcopy {
         return sizeApproved_;
     }
 
-    bool Copier::copy(std::size_t index) {
+    bool Copier::copy(std::size_t index, std::atomic_bool* cancellation) {
+        if (cancellation != nullptr && cancellation->load()) {
+            return false;
+        }
+
         const CopyEntry& entry = entries_[index];
         if (entry.skipped) {
             return true;
@@ -136,7 +158,15 @@ namespace fullcopy {
             return error == ERROR_ALREADY_EXISTS && isDirectory(destination);
         }
 
-        return CopyFileW(getFullSourcePath(entry.sourcePath).c_str(), destination.c_str(), TRUE) != FALSE;
+        const std::wstring source = getFullSourcePath(entry.sourcePath);
+        return CopyFileExW(
+            source.c_str(),
+            destination.c_str(),
+            copyProgress,
+            cancellation,
+            nullptr,
+            COPY_FILE_FAIL_IF_EXISTS
+        ) != FALSE;
     }
 
     RenameResult Copier::rename(std::size_t index, const std::wstring& newName) {
@@ -251,7 +281,11 @@ namespace fullcopy {
         return tempSize_;
     }
 
-    bool Copier::scanDirectory(const std::wstring& relativePath) {
+    bool Copier::scanDirectory(const std::wstring& relativePath, std::atomic_bool* cancellation) {
+        if (cancellation != nullptr && cancellation->load()) {
+            return false;
+        }
+
         const std::wstring directory = getFullSourcePath(relativePath);
         const std::wstring pattern = joinPath(directory, L"*");
         WIN32_FIND_DATAW data = {};
@@ -272,6 +306,10 @@ namespace fullcopy {
         const FindHandle guard(find);
 
         do {
+            if (cancellation != nullptr && cancellation->load()) {
+                return false;
+            }
+
             const std::wstring name = data.cFileName;
             if (name == L"." || name == L"..") {
                 continue;
@@ -284,7 +322,7 @@ namespace fullcopy {
 
             // Links and junctions are created as empty directories to avoid infinite loops.
             if (directoryEntry && (data.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) == 0) {
-                if (!scanDirectory(childPath)) {
+                if (!scanDirectory(childPath, cancellation)) {
                     return false;
                 }
             }

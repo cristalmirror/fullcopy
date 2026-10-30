@@ -21,7 +21,7 @@ classDiagram
         -Copier copier_
         -unique_ptr~Decision~ decision_
         -HANDLE workerThread_
-        -volatile LONG cancelRequested_
+        -atomic_bool cancelRequested_
         -bool closePending_
         +Window(HINSTANCE instance)
         +~Window()
@@ -78,9 +78,9 @@ classDiagram
         -vector~CopyEntry~ entries_
         +Copier()
         +setDirectories(wstring sourceRoot, wstring destinationRoot) void
-        +load() bool
+        +load(atomic_bool* cancellation = nullptr) bool
         +check(size_t index) bool
-        +copy(size_t index) bool
+        +copy(size_t index, atomic_bool* cancellation = nullptr) bool
         +rename(size_t index, wstring newName) RenameResult
         +skip(size_t index) void
         +getEntryCount() size_t
@@ -92,7 +92,7 @@ classDiagram
         +getDestinationRoot() wstring
         +isSizeApproved() bool
         +getTempSize() size_t
-        -scanDirectory(wstring relativePath) bool
+        -scanDirectory(wstring relativePath, atomic_bool* cancellation) bool
         -getFullSourcePath(wstring relativePath) wstring
         -normalizePath(wstring path)$ wstring
         -isValidName(wstring name)$ bool
@@ -146,5 +146,7 @@ classDiagram
 - **Window** owns one `Copier` and creates one `Decision` only while a name is too long (`unique_ptr`, 0..1).
 - **Decision** keeps a reference to the `Copier` and calls `rename()` when the user presses *Accept*, then calls `selfDestroy()`.
 - **Copier** stores the scanned files and directories as `CopyEntry` items, in pre-order (a directory always comes before its content).
+- A failed or cancelled scan discards partial entries and stops the operation before files are copied. Existing destination paths must be directories, and existing files are never overwritten.
+- `Window` shares an atomic cancellation flag with `Copier`. Scanning checks it between entries, and `CopyFileExW` checks it through its progress callback.
 - **Common** is not a class: it groups the control IDs, the messages between the copy thread and the main window, and the UI helper functions (`include/Common.hpp`).
 - The copy runs on a separate thread (`Window::runCopy`). It asks for a new name with `SendMessage(WM_APP_RENAME_REQUEST)`, so it waits while the `Decision` window is open.

@@ -55,7 +55,7 @@ namespace fullcopy {
 
     Window::~Window() {
         if (workerThread_ != nullptr) {
-            InterlockedExchange(&cancelRequested_, 1);
+            cancelRequested_.store(true);
             WaitForSingleObject(workerThread_, INFINITE);
             CloseHandle(workerThread_);
         }
@@ -369,7 +369,7 @@ namespace fullcopy {
             return;
         }
 
-        InterlockedExchange(&cancelRequested_, 0);
+        cancelRequested_.store(false);
         closePending_ = false;
         setControlsEnabled(false);
         updateProgressBar(0);
@@ -389,7 +389,7 @@ namespace fullcopy {
     void Window::onClose() {
         if (workerThread_ != nullptr) {
             // The window is destroyed when the copy thread confirms it has stopped.
-            InterlockedExchange(&cancelRequested_, 1);
+            cancelRequested_.store(true);
             closePending_ = true;
             setStatus(L"Cancelling...");
             return;
@@ -480,7 +480,7 @@ namespace fullcopy {
     }
 
     void Window::runCopy() {
-        if (!copier_.load()) {
+        if (!copier_.load(&cancelRequested_)) {
             PostMessageW(window_, WM_APP_COPY_FAILED, 0, 0);
             return;
         }
@@ -490,18 +490,22 @@ namespace fullcopy {
         std::size_t skipped = 0;
         int lastPercentage = -1;
 
-        for (std::size_t i = 0; i < count && cancelRequested_ == 0; ++i) {
+        for (std::size_t i = 0; i < count && !cancelRequested_.load(); ++i) {
             // Ask for a new name until the path fits. SendMessage blocks this
             // thread until the user answers in the Decision window.
             while (!copier_.check(i)) {
-                if (copier_.getMaxNameLength(i) == 0 || cancelRequested_ != 0 || SendMessageW(window_, WM_APP_RENAME_REQUEST, static_cast<WPARAM>(i), 0) == FALSE) {
+                if (copier_.getMaxNameLength(i) == 0 || cancelRequested_.load() || SendMessageW(window_, WM_APP_RENAME_REQUEST, static_cast<WPARAM>(i), 0) == FALSE) {
                     copier_.skip(i);
                     ++skipped;
                     break;
                 }
             }
 
-            if (!copier_.copy(i)) {
+            if (cancelRequested_.load()) {
+                break;
+            }
+
+            if (!copier_.copy(i, &cancelRequested_)) {
                 ++failed;
             }
 

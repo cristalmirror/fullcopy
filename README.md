@@ -22,6 +22,12 @@ Written in C++17 with the Win32 API. It is cross-compiled from Linux with MinGW-
 5. When the copy finishes, a summary shows how many items were skipped or failed.
 6. Press **Accept** in the main window to close the application.
 
+Existing destination files are never overwritten. A rename that would use an existing destination
+name is rejected; other existing files are reported as copy failures. If any source directory cannot
+be scanned, the operation stops before copying files. Destination directories created while preparing
+the operation may remain. Closing the main window requests cancellation during scanning or copying;
+the current partially copied file is removed when cancellation is processed.
+
 ### Limits checked
 
 | Item | Maximum length |

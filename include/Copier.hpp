@@ -1,6 +1,7 @@
 #ifndef FULLCOPY_COPIER_HPP
 #define FULLCOPY_COPIER_HPP
 
+#include <atomic>
 #include <cstddef>
 #include <string>
 #include <vector>
@@ -44,16 +45,17 @@ public:
     void setDirectories(const std::wstring& sourceRoot, const std::wstring& destinationRoot);
 
     // Scans the source directory and all its subdirectories.
-    // Returns false on any scan error or an invalid destination.
+    // Returns false on cancellation, any scan error, or an invalid destination.
     // A failed scan discards all partial entries.
-    bool load();
+    bool load(std::atomic_bool* cancellation = nullptr);
 
     // Checks that the destination path of an entry is short enough to be copied.
     // Updates sizeApproved_ and tempSize_ and returns sizeApproved_.
     bool check(std::size_t index);
 
-    // Copies one entry: creates the directory or copies the file.
-    bool copy(std::size_t index);
+    // Copies one entry without overwriting existing files. Cancellation removes
+    // the partial file created by the current copy operation.
+    bool copy(std::size_t index, std::atomic_bool* cancellation = nullptr);
 
     // Gives a new destination name to an entry. When the entry is a directory,
     // everything inside it is moved under the new name too.
@@ -76,7 +78,7 @@ public:
     std::size_t getTempSize() const;
 
 private:
-    bool scanDirectory(const std::wstring& relativePath);
+    bool scanDirectory(const std::wstring& relativePath, std::atomic_bool* cancellation);
     std::wstring getFullSourcePath(const std::wstring& relativePath) const;
     static std::wstring normalizePath(const std::wstring& path);
     static bool isValidName(const std::wstring& name);

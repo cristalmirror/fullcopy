@@ -3,6 +3,7 @@
 
 #include <windows.h>
 
+#include <atomic>
 #include <cstddef>
 #include <memory>
 #include <string>
@@ -70,7 +71,7 @@ private:
     std::unique_ptr<Decision> decision_;
 
     HANDLE workerThread_;
-    volatile LONG cancelRequested_;
+    std::atomic_bool cancelRequested_;
     bool closePending_;
 };
 
