@@ -12,22 +12,37 @@ namespace fullcopy {
     } // namespace
 
     HFONT getUiFont() {
-        static HFONT font = nullptr;
+        struct FontOwner
+        {
+            HFONT handle = nullptr;
+            bool owned = false;
 
-        if (font == nullptr) {
-            NONCLIENTMETRICSW metrics = {};
-            metrics.cbSize = sizeof(metrics);
+            FontOwner() {
+                NONCLIENTMETRICSW metrics = {};
+                metrics.cbSize = sizeof(metrics);
 
-            if (SystemParametersInfoW(SPI_GETNONCLIENTMETRICS, sizeof(metrics), &metrics, 0)) {
-                font = CreateFontIndirectW(&metrics.lfMessageFont);
+                if (SystemParametersInfoW(SPI_GETNONCLIENTMETRICS, sizeof(metrics), &metrics, 0)) {
+                    handle = CreateFontIndirectW(&metrics.lfMessageFont);
+                    owned = handle != nullptr;
+                }
+
+                if (handle == nullptr) {
+                    handle = static_cast<HFONT>(GetStockObject(DEFAULT_GUI_FONT));
+                }
             }
 
-            if (font == nullptr) {
-                font = static_cast<HFONT>(GetStockObject(DEFAULT_GUI_FONT));
-            }   
-        }
+            ~FontOwner() {
+                if (owned) {
+                    DeleteObject(handle);
+                }
+            }
 
-        return font;
+            FontOwner(const FontOwner&) = delete;
+            FontOwner& operator=(const FontOwner&) = delete;
+        };
+
+        static FontOwner font;
+        return font.handle;
     }
 
     void applyUiFont(HWND window) {

@@ -12,7 +12,7 @@ and this project uses [Semantic Versioning](https://semver.org/).
 - Reject rename targets that already exist in the destination and prevent file overwrites during copying.
 - Stop copying when a directory cannot be scanned or enumeration fails, discarding partial scan results.
 - Reject files used as destination directories, including existing paths encountered during copying.
-- Close directory search handles on cancellation, scan errors and exceptions.
+- Close directory search handles on cancellation, scan errors and exceptions, and release the owned UI font on shutdown.
 - Use an atomic cancellation flag during scanning and file copying, removing the current partial file when a copy is cancelled.
 - Catch worker exceptions and report an incomplete copy instead of letting them escape the thread entry point.
 
