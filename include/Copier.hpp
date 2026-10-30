@@ -24,7 +24,8 @@ enum class RenameResult
     Empty,
     InvalidName,
     TooLong,
-    AlreadyExists
+    AlreadyExists,
+    DestinationUnavailable
 };
 
 class Copier

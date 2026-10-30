@@ -114,6 +114,7 @@ classDiagram
         InvalidName
         TooLong
         AlreadyExists
+        DestinationUnavailable
     }
 
     class Common {

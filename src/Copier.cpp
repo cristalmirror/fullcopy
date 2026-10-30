@@ -133,7 +133,7 @@ namespace fullcopy {
             return error == ERROR_ALREADY_EXISTS && isDirectory(destination);
         }
 
-        return CopyFileW(getFullSourcePath(entry.sourcePath).c_str(), destination.c_str(), FALSE) != FALSE;
+        return CopyFileW(getFullSourcePath(entry.sourcePath).c_str(), destination.c_str(), TRUE) != FALSE;
     }
 
     RenameResult Copier::rename(std::size_t index, const std::wstring& newName) {
@@ -158,6 +158,17 @@ namespace fullcopy {
             if (i != index && !entries_[i].skipped && equalsIgnoreCase(entries_[i].destinationPath, newPath)) {
                 return RenameResult::AlreadyExists;
             }
+        }
+
+        const std::wstring fullPath = joinPath(destinationRoot_, newPath);
+        const DWORD attributes = GetFileAttributesW(fullPath.c_str());
+        if (attributes != INVALID_FILE_ATTRIBUTES) {
+            return RenameResult::AlreadyExists;
+        }
+
+        const DWORD error = GetLastError();
+        if (error != ERROR_FILE_NOT_FOUND && error != ERROR_PATH_NOT_FOUND) {
+            return RenameResult::DestinationUnavailable;
         }
 
         entry.destinationPath = newPath;

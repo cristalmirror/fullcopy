@@ -250,6 +250,11 @@ namespace fullcopy {
             case RenameResult::AlreadyExists:
             error = L"Another file or directory already has this name.";
             break;
+
+            case RenameResult::DestinationUnavailable:
+                error = L"The destination could not be checked. "
+                        L"Verify its availability and your permissions.";
+                break;
         }
 
         MessageBoxW(window_, error.c_str(), L"Invalid name", MB_OK | MB_ICONWARNING);
