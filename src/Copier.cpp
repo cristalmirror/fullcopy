@@ -9,6 +9,12 @@
 namespace fullcopy {
 
     namespace {
+        bool isDirectory(const std::wstring& path) {
+            const DWORD attributes = GetFileAttributesW(path.c_str());
+            return attributes != INVALID_FILE_ATTRIBUTES
+                && (attributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
+        }
+
         class FindHandle {
         public:
             explicit FindHandle(HANDLE handle) : handle_(handle) {}
@@ -88,6 +94,10 @@ namespace fullcopy {
             return false;
         }
 
+        if (!isDirectory(destinationRoot_)) {
+            return false;
+        }
+
         scanDirectory(L"");
         return true;
     }
@@ -116,7 +126,11 @@ namespace fullcopy {
         const std::wstring destination = getFullDestinationPath(index);
 
         if (entry.isDirectory) {
-            return CreateDirectoryW(destination.c_str(), nullptr) != FALSE || GetLastError() == ERROR_ALREADY_EXISTS;
+            if (CreateDirectoryW(destination.c_str(), nullptr)) {
+                return true;
+            }
+            const DWORD error = GetLastError();
+            return error == ERROR_ALREADY_EXISTS && isDirectory(destination);
         }
 
         return CopyFileW(getFullSourcePath(entry.sourcePath).c_str(), destination.c_str(), FALSE) != FALSE;

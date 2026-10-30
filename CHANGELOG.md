@@ -7,6 +7,10 @@ and this project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- Reject files used as destination directories, including existing paths encountered during copying.
+
 ### Added
 
 - Separate debug builds with symbols, standard library assertions, stack protection and additional compiler warnings (`make debug` and `make docker-debug`).
