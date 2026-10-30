@@ -92,7 +92,7 @@ classDiagram
         +getDestinationRoot() wstring
         +isSizeApproved() bool
         +getTempSize() size_t
-        -scanDirectory(wstring relativePath) void
+        -scanDirectory(wstring relativePath) bool
         -getFullSourcePath(wstring relativePath) wstring
         -normalizePath(wstring path)$ wstring
         -isValidName(wstring name)$ bool

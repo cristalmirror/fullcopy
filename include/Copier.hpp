@@ -44,7 +44,8 @@ public:
     void setDirectories(const std::wstring& sourceRoot, const std::wstring& destinationRoot);
 
     // Scans the source directory and all its subdirectories.
-    // Returns false if the source can not be read or the destination can not be created.
+    // Returns false on any scan error or an invalid destination.
+    // A failed scan discards all partial entries.
     bool load();
 
     // Checks that the destination path of an entry is short enough to be copied.
@@ -75,7 +76,7 @@ public:
     std::size_t getTempSize() const;
 
 private:
-    void scanDirectory(const std::wstring& relativePath);
+    bool scanDirectory(const std::wstring& relativePath);
     std::wstring getFullSourcePath(const std::wstring& relativePath) const;
     static std::wstring normalizePath(const std::wstring& path);
     static bool isValidName(const std::wstring& name);

@@ -10,7 +10,9 @@ and this project uses [Semantic Versioning](https://semver.org/).
 ### Fixed
 
 - Reject rename targets that already exist in the destination and prevent file overwrites during copying.
+- Stop copying when a directory cannot be scanned or enumeration fails, discarding partial scan results.
 - Reject files used as destination directories, including existing paths encountered during copying.
+- Close directory search handles on scan errors and exceptions.
 
 ### Added
 

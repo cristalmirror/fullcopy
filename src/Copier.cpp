@@ -98,7 +98,10 @@ namespace fullcopy {
             return false;
         }
 
-        scanDirectory(L"");
+        if (!scanDirectory(L"")) {
+            entries_.clear();
+            return false;
+        }
         return true;
     }
 
@@ -248,19 +251,25 @@ namespace fullcopy {
         return tempSize_;
     }
 
-    void Copier::scanDirectory(const std::wstring& relativePath) {
-        const std::wstring pattern = joinPath(getFullSourcePath(relativePath), L"*");
-
-        WIN32_FIND_DATAW data;
-        HANDLE find = FindFirstFileExW( pattern.c_str(), 
-                                        FindExInfoBasic, 
-                                        &data,
-                                        FindExSearchNameMatch, 
-                                        nullptr, 
-                                        FIND_FIRST_EX_LARGE_FETCH);
+    bool Copier::scanDirectory(const std::wstring& relativePath) {
+        const std::wstring directory = getFullSourcePath(relativePath);
+        const std::wstring pattern = joinPath(directory, L"*");
+        WIN32_FIND_DATAW data = {};
+        const HANDLE find = FindFirstFileExW(
+            pattern.c_str(),
+            FindExInfoBasic,
+            &data,
+            FindExSearchNameMatch,
+            nullptr,
+            FIND_FIRST_EX_LARGE_FETCH
+        );
         if (find == INVALID_HANDLE_VALUE) {
-            return;
+            const DWORD error = GetLastError();
+            // An existing directory without matching entries is empty.
+            return error == ERROR_FILE_NOT_FOUND && isDirectory(directory);
         }
+
+        const FindHandle guard(find);
 
         do {
             const std::wstring name = data.cFileName;
@@ -269,22 +278,20 @@ namespace fullcopy {
             }
 
             const std::wstring childPath = relativePath.empty() ? name : relativePath + L'\\' + name;
-            const bool isDirectory = (data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
+            const bool directoryEntry = (data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
 
-            CopyEntry entry;
-            entry.sourcePath = childPath;
-            entry.destinationPath = childPath;
-            entry.isDirectory = isDirectory;
-            entry.skipped = false;
-            entries_.push_back(entry);
+            entries_.push_back({childPath, childPath, directoryEntry, false});
 
             // Links and junctions are created as empty directories to avoid infinite loops.
-            if (isDirectory && (data.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) == 0) {
-                scanDirectory(childPath);
+            if (directoryEntry && (data.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) == 0) {
+                if (!scanDirectory(childPath)) {
+                    return false;
+                }
             }
         } while (FindNextFileW(find, &data));
 
-        FindClose(find);
+        const DWORD error = GetLastError();
+        return error == ERROR_NO_MORE_FILES;
     }
 
     /*
