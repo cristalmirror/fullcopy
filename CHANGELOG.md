@@ -14,6 +14,7 @@ and this project uses [Semantic Versioning](https://semver.org/).
 - Reject files used as destination directories, including existing paths encountered during copying.
 - Close directory search handles on cancellation, scan errors and exceptions.
 - Use an atomic cancellation flag during scanning and file copying, removing the current partial file when a copy is cancelled.
+- Catch worker exceptions and report an incomplete copy instead of letting them escape the thread entry point.
 
 ### Added
 

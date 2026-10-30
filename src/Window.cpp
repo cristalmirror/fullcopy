@@ -445,7 +445,8 @@ namespace fullcopy {
 
         setControlsEnabled(true);
         setStatus(L"The copy could not be done.");
-        showError(L"The source directory could not be read or the destination directory could not be created.");
+        showError(L"The copy could not be completed. "
+                  L"Some destination files or directories may already have been created.");
     }   
 
     void Window::finishWorker() {
@@ -475,8 +476,14 @@ namespace fullcopy {
     }      
 
     DWORD WINAPI Window::copyThread(LPVOID parameter) {
-        static_cast<Window*>(parameter)->runCopy();
-        return 0;
+        auto* self = static_cast<Window*>(parameter);
+        try {
+            self->runCopy();
+            return 0;
+        } catch (...) {
+            PostMessageW(self->window_, WM_APP_COPY_FAILED, 0, 0);
+            return 1;
+        }
     }
 
     void Window::runCopy() {

@@ -27,7 +27,7 @@ enum ControlId
 const UINT WM_APP_PROGRESS       = WM_APP + 1; // wParam: percentage (0-100).
 const UINT WM_APP_RENAME_REQUEST = WM_APP + 2; // wParam: entry index. Returns TRUE if renamed.
 const UINT WM_APP_COPY_FINISHED  = WM_APP + 3; // wParam: failed entries, lParam: skipped entries.
-const UINT WM_APP_COPY_FAILED    = WM_APP + 4; // The source directory could not be read.
+const UINT WM_APP_COPY_FAILED    = WM_APP + 4; // A scan, destination or worker operation failed.
 
 // Returns the system font used for message boxes (shared by every window).
 HFONT getUiFont();

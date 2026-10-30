@@ -143,7 +143,7 @@ namespace fullcopy {
             return false;
         }
 
-        const CopyEntry& entry = entries_[index];
+        const CopyEntry& entry = entries_.at(index);
         if (entry.skipped) {
             return true;
         }
