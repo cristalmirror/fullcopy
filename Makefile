@@ -27,9 +27,19 @@ LDLIBS    := -lcomctl32 -lshell32 -lole32 -luuid
 IMAGE     := fullcopy-builder
 CONTAINER ?= docker
 
-.PHONY: all clean docker docker-image
+.PHONY: all clean docker docker-image debug docker-debug
 
 all: $(TARGET)
+
+debug:
+	$(MAKE) all BUILD_DIR=build/debug BIN_DIR=bin/debug \
+		CXXFLAGS="$(filter-out -O2,$(CXXFLAGS)) -Og -g3 \
+		-D_GLIBCXX_ASSERTIONS -fstack-protector-strong \
+		-Wformat=2 -Wshadow -Wconversion"
+
+docker-debug: docker-image
+	$(CONTAINER) run --rm -u $$(id -u):$$(id -g) \
+		-v "$(CURDIR)":/project:Z $(IMAGE) make debug
 
 $(TARGET): $(OBJECTS) $(RESOURCE) | $(BIN_DIR)
 	$(CXX) $(LDFLAGS) -o $@ $^ $(LDLIBS)

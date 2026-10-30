@@ -68,6 +68,8 @@ make
 
 | Command | Description |
 |---|---|
+| `make debug` | Builds `bin/debug/fullcopy.exe` with debug symbols, assertions and stack protection. |
+| `make docker-debug` | Builds the debug executable inside Docker. |
 | `make clean` | Removes the `build/` and `bin/` directories. |
 | `make clean && make docker` | Builds everything from scratch. |
 
