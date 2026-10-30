@@ -18,6 +18,7 @@ and this project uses [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- Show the full source path of the item being copied under the progress bar.
 - Separate debug builds with symbols, standard library assertions, stack protection and additional compiler warnings (`make debug` and `make docker-debug`).
 
 ## [0.0.1] - 2026-10-28

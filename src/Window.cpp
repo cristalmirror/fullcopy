@@ -12,7 +12,7 @@ namespace fullcopy {
     namespace {
 
         const int CLIENT_WIDTH  = 522;
-        const int CLIENT_HEIGHT = 222;
+        const int CLIENT_HEIGHT = 244;
 
         std::wstring trim(const std::wstring& text) {
             const wchar_t* const SPACES = L" \t\r\n\"";
@@ -47,6 +47,7 @@ namespace fullcopy {
         browseDestinationButton_(nullptr),
         startButton_(nullptr),
         progressBar_(nullptr),
+        pathLabel_(nullptr),
         statusLabel_(nullptr),
         workerThread_(nullptr),
         cancelRequested_(0),
@@ -188,6 +189,10 @@ namespace fullcopy {
             onCopyFailed();
             return 0;
 
+        case WM_APP_CURRENT_ENTRY:
+            onCurrentEntry(static_cast<std::size_t>(wParam));
+            return 0;
+
         case WM_CLOSE:
             onClose();
             return 0;
@@ -275,12 +280,22 @@ namespace fullcopy {
                                 ID_PROGRESS_BAR);
         SendMessageW(progressBar_, PBM_SETRANGE32, 0, 100);
 
+        pathLabel_ = createControl(0,
+                                L"STATIC",
+                                L"",
+                                SS_NOPREFIX | SS_PATHELLIPSIS,
+                                12,
+                                150,
+                                498,
+                                18,
+                                ID_PATH_LABEL);
+
         statusLabel_ = createControl(0, 
                                 L"STATIC", 
                                 L"Select the directories and press Start.",
                                 SS_NOPREFIX | SS_ENDELLIPSIS, 
                                 12, 
-                                152, 
+                                174, 
                                 498, 
                                 18, 
                                 ID_STATUS_LABEL);
@@ -290,7 +305,7 @@ namespace fullcopy {
                                 L"Start", 
                                 WS_TABSTOP | BS_DEFPUSHBUTTON,
                                 320, 
-                                182, 
+                                204, 
                                 90, 
                                 28, 
                                 ID_START_BUTTON);
@@ -299,7 +314,7 @@ namespace fullcopy {
                                 L"Accept", 
                                 WS_TABSTOP | BS_PUSHBUTTON, 
                                 420, 
-                                182, 
+                                204, 
                                 90, 
                                 28, 
                                 ID_ACCEPT_BUTTON);
@@ -374,6 +389,7 @@ namespace fullcopy {
         setControlsEnabled(false);
         updateProgressBar(0);
         setStatus(L"Reading the source directory...");
+        setCurrentPath(L"");
 
         workerThread_ = CreateThread(nullptr, 0, copyThread, this, 0, nullptr);
         if (workerThread_ == nullptr) {
@@ -420,6 +436,7 @@ namespace fullcopy {
         }
 
         setControlsEnabled(true);
+        setCurrentPath(L"");
         setStatus(L"Finished.");
 
         std::wstring text = L"The copy has finished.";
@@ -444,10 +461,25 @@ namespace fullcopy {
         }
 
         setControlsEnabled(true);
+        setCurrentPath(L"");
         setStatus(L"The copy could not be done.");
         showError(L"The copy could not be completed. "
                   L"Some destination files or directories may already have been created.");
     }   
+
+    // Shows the full source path of the entry the copy thread is working on.
+    void Window::onCurrentEntry(std::size_t entryIndex) {
+        if (entryIndex >= copier_.getEntryCount()) {
+            return;
+        }
+
+        std::wstring path = copier_.getSourceRoot();
+        if (!path.empty() && path.back() != L'\\') {
+            path += L'\\';
+        }
+        path += copier_.getEntry(entryIndex).sourcePath;
+        setCurrentPath(path);
+    }
 
     void Window::finishWorker() {
         if (workerThread_ != nullptr) {
@@ -470,6 +502,10 @@ namespace fullcopy {
     void Window::setStatus(const std::wstring& text) {
         SetWindowTextW(statusLabel_, text.c_str());
     }   
+
+    void Window::setCurrentPath(const std::wstring& path) {
+        SetWindowTextW(pathLabel_, path.c_str());
+    }
 
     void Window::showError(const std::wstring& text) {
         MessageBoxW(window_, text.c_str(), L"FullCopy", MB_OK | MB_ICONERROR);
@@ -498,6 +534,8 @@ namespace fullcopy {
         int lastPercentage = -1;
 
         for (std::size_t i = 0; i < count && !cancelRequested_.load(); ++i) {
+            PostMessageW(window_, WM_APP_CURRENT_ENTRY, static_cast<WPARAM>(i), 0);
+
             // Ask for a new name until the path fits. SendMessage blocks this
             // thread until the user answers in the Decision window.
             while (!copier_.check(i)) {

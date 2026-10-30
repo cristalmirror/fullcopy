@@ -45,9 +45,11 @@ private:
     LRESULT onRenameRequest(std::size_t entryIndex);
     void onCopyFinished(std::size_t failed, std::size_t skipped);
     void onCopyFailed();
+    void onCurrentEntry(std::size_t entryIndex);
     void finishWorker();
     void setControlsEnabled(bool enabled);
     void setStatus(const std::wstring& text);
+    void setCurrentPath(const std::wstring& path);
     void showError(const std::wstring& text);
 
     // Copy thread: walks every entry, asks for a new name when needed and copies it.
@@ -65,6 +67,7 @@ private:
     HWND browseDestinationButton_; // Browses the destination directory.
     HWND startButton_;
     HWND progressBar_;
+    HWND pathLabel_; // Path being copied, under the progress bar.
     HWND statusLabel_;
 
     Copier copier_;

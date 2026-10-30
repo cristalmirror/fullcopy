@@ -17,6 +17,7 @@ classDiagram
         -HWND browseDestinationButton_
         -HWND startButton_
         -HWND progressBar_
+        -HWND pathLabel_
         -HWND statusLabel_
         -Copier copier_
         -unique_ptr~Decision~ decision_
@@ -38,9 +39,11 @@ classDiagram
         -onRenameRequest(size_t entryIndex) LRESULT
         -onCopyFinished(size_t failed, size_t skipped) void
         -onCopyFailed() void
+        -onCurrentEntry(size_t entryIndex) void
         -finishWorker() void
         -setControlsEnabled(bool enabled) void
         -setStatus(wstring text) void
+        -setCurrentPath(wstring path) void
         -showError(wstring text) void
         -copyThread(LPVOID parameter)$ DWORD
         -runCopy() void
