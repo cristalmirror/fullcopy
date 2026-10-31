@@ -401,15 +401,9 @@ namespace fullcopy {
     }
 
     void Window::onCopyFinished(std::size_t failed, std::size_t skipped) {
-        finishWorker();
-
-        if (closePending_) {
-            DestroyWindow(window_);
+        if (!restoreAfterWorker()) {
             return;
         }
-
-        setControlsEnabled(true);
-        setCurrentPath(L"");
         setStatus(L"Finished.");
 
         std::wstring text = L"The copy has finished.";
@@ -426,15 +420,9 @@ namespace fullcopy {
         }
 
     void Window::onCopyFailed() {
-        finishWorker();
-
-        if (closePending_) {
-            DestroyWindow(window_);
+        if (!restoreAfterWorker()) {
             return;
         }
-
-        setControlsEnabled(true);
-        setCurrentPath(L"");
         setStatus(L"The copy could not be done.");
         showError(L"The copy could not be completed. "
                   L"Some destination files or directories may already have been created.");
@@ -447,6 +435,17 @@ namespace fullcopy {
         }
 
         setCurrentPath(joinPath(copier_.getSourceRoot(), copier_.getEntry(entryIndex).sourcePath));
+    }
+
+    bool Window::restoreAfterWorker() {
+        finishWorker();
+        if (closePending_) {
+            DestroyWindow(window_);
+            return false;
+        }
+        setControlsEnabled(true);
+        setCurrentPath(L"");
+        return true;
     }
 
     void Window::finishWorker() {

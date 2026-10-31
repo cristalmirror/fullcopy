@@ -46,6 +46,7 @@ private:
     void onCopyFinished(std::size_t failed, std::size_t skipped);
     void onCopyFailed();
     void onCurrentEntry(std::size_t entryIndex);
+    bool restoreAfterWorker();
     void finishWorker();
     void setControlsEnabled(bool enabled);
     void setStatus(const std::wstring& text);

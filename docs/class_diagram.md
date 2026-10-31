@@ -40,6 +40,7 @@ classDiagram
         -onCopyFinished(size_t failed, size_t skipped) void
         -onCopyFailed() void
         -onCurrentEntry(size_t entryIndex) void
+        -restoreAfterWorker() bool
         -finishWorker() void
         -setControlsEnabled(bool enabled) void
         -setStatus(wstring text) void
