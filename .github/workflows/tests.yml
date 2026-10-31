@@ -22,7 +22,7 @@ jobs:
         shell: msys2 {0}
         run: |
           make CXX=g++ WINDRES=windres CXXFLAGS='-std=c++17 -O2 -Wall -Wextra -Werror -Iinclude -DUNICODE -D_UNICODE -D_WIN32_WINNT=0x0601 -MMD -MP'
-          g++ -std=c++17 -O2 -Wall -Wextra -Werror -DUNICODE -D_UNICODE -D_WIN32_WINNT=0x0601 -Iinclude tests/copier_tests.cpp src/Copier.cpp -o bin/copier_tests.exe -static -lshell32 -lole32 -luuid
+          g++ -std=c++17 -O2 -Wall -Wextra -Werror -DUNICODE -D_UNICODE -D_WIN32_WINNT=0x0601 -Iinclude tests/copier_tests.cpp src/Copier.cpp src/Common.cpp -o bin/copier_tests.exe -static -lshell32 -lole32 -luuid -lgdi32 -luser32
       - name: Run integration tests
         shell: msys2 {0}
         run: ./bin/copier_tests.exe
