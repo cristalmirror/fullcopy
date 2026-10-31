@@ -63,4 +63,12 @@ namespace fullcopy {
         return text;
     }
 
+    bool equalsIgnoreCase(const std::wstring& first, const std::wstring& second) {
+        return CompareStringOrdinal(first.c_str(),
+                                    static_cast<int>(first.size()),
+                                    second.c_str(),
+                                    static_cast<int>(second.size()),
+                                    TRUE) == CSTR_EQUAL;
+    }
+
 } // namespace fullcopy

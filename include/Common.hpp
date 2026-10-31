@@ -40,6 +40,9 @@ void applyUiFont(HWND window);
 // Returns the text of a window (edit box, label, ...).
 std::wstring getWindowString(HWND window);
 
+// Compares strings using Windows ordinal case-insensitive rules.
+bool equalsIgnoreCase(const std::wstring& first, const std::wstring& second);
+
 } // namespace fullcopy
 
 #endif // FULLCOPY_COMMON_HPP

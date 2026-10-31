@@ -127,6 +127,7 @@ classDiagram
         +WM_APP_RENAME_REQUEST$ UINT
         +WM_APP_COPY_FINISHED$ UINT
         +WM_APP_COPY_FAILED$ UINT
+        +equalsIgnoreCase(wstring first, wstring second) bool
         +getUiFont() HFONT
         +applyUiFont(HWND window) void
         +getWindowString(HWND window) wstring
@@ -140,6 +141,7 @@ classDiagram
     Decision ..> RenameResult : reads
     Window ..> Common : uses
     Decision ..> Common : uses
+    Copier ..> Common : uses
 
     note for Decision "Appears only when Copier::check() returns false (sizeApproved_ == false)"
 ```

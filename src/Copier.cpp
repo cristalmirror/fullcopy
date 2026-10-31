@@ -1,4 +1,5 @@
 #include "Copier.hpp"
+#include "Common.hpp"
 
 #include <windows.h>
 #include <shlobj.h>
@@ -59,14 +60,6 @@ namespace fullcopy {
                 return base + part;
             }
             return base + L'\\' + part;
-        }
-
-        bool equalsIgnoreCase(const std::wstring& first, const std::wstring& second) {
-            return CompareStringOrdinal(first.c_str(),
-                                        static_cast<int>(first.size()),
-                                        second.c_str(),
-                                        static_cast<int>(second.size()),
-                                        TRUE) == CSTR_EQUAL;
         }
 
         // Names that Windows reserves for devices, with or without extension.

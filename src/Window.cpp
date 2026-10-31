@@ -24,12 +24,6 @@ namespace fullcopy {
             return text.substr(first, last - first + 1);
         }
 
-        bool equalsIgnoreCase(const std::wstring& first, const std::wstring& second) {
-            return CompareStringOrdinal(first.c_str(), static_cast<int>(first.size()),
-                                        second.c_str(), static_cast<int>(second.size()),
-                                        TRUE) == CSTR_EQUAL;
-        }
-
         bool startsWithIgnoreCase(const std::wstring& text, const std::wstring& prefix) {
             return text.size() >= prefix.size() && equalsIgnoreCase(text.substr(0, prefix.size()), prefix);
         }
