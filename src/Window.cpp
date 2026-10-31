@@ -51,8 +51,7 @@ namespace fullcopy {
     Window::~Window() {
         if (workerThread_ != nullptr) {
             cancelRequested_.store(true);
-            WaitForSingleObject(workerThread_, INFINITE);
-            CloseHandle(workerThread_);
+            finishWorker();
         }
     }
 
