@@ -38,10 +38,10 @@ namespace fullcopy {
     std::wstring getWindowString(HWND window);
 
     // Compares strings using Windows ordinal case-insensitive rules.
-    bool equalsIgnoreCase(const std::wstring& first, const std::wstring& second);
+    bool equalsIgnoreCase(const std::wstring &first, const std::wstring &second);
 
     // Joins a nonempty base path and a relative part with a backslash.
-    std::wstring joinPath(const std::wstring& base, const std::wstring& part);
+    std::wstring joinPath(const std::wstring &base, const std::wstring &part);
 
     // Associates a native window with its owner and dispatches its messages.
     template<typename Owner> 
@@ -49,11 +49,11 @@ namespace fullcopy {
                                    UINT message, 
                                    WPARAM wParam, 
                                    LPARAM lParam,
-                                   HWND Owner::* windowMember,
-                                   LRESULT (Owner::* handler)(UINT, WPARAM, LPARAM)) {
-        Owner* self = nullptr;
+                                   HWND Owner:: *windowMember,
+                                   LRESULT (Owner:: *handler)(UINT, WPARAM, LPARAM)) {
+        Owner *self = nullptr;
         if (message == WM_NCCREATE) {
-            const auto* creation = reinterpret_cast<const CREATESTRUCTW*>(lParam);
+            const auto *creation = reinterpret_cast<const CREATESTRUCTW*>(lParam);
             self = static_cast<Owner*>(creation->lpCreateParams);
             SetWindowLongPtrW(window, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(self));
             self->*windowMember = window;

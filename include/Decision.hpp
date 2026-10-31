@@ -12,11 +12,11 @@ namespace fullcopy {
     // It asks the user for a new name and applies it with Copier::rename().
     class Decision {
     public:
-        Decision(HINSTANCE instance, Copier& copier, std::size_t entryIndex);
+        Decision(HINSTANCE instance, Copier &copier, std::size_t entryIndex);
         ~Decision();
 
         Decision(const Decision&) = delete;
-        Decision& operator=(const Decision&) = delete;
+        Decision &operator=(const Decision&) = delete;
 
         // Shows the window as modal over the parent and waits until it is closed.
         // Returns true if the entry was renamed, false if the user closed the window.
@@ -26,7 +26,7 @@ namespace fullcopy {
         void selfDestroy();
 
     private:
-        static const wchar_t* CLASS_NAME;
+        static const wchar_t *CLASS_NAME;
 
         static void registerClass(HINSTANCE instance);
         static LRESULT CALLBACK windowProcedure(HWND window, UINT message, WPARAM wParam, LPARAM lParam);
@@ -36,7 +36,7 @@ namespace fullcopy {
         void onAccept();
 
         HINSTANCE instance_;
-        Copier& copier_;
+        Copier &copier_;
         std::size_t entryIndex_;
         HWND parent_;
         HWND window_;

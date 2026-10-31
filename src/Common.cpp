@@ -38,7 +38,7 @@ namespace fullcopy {
             }
 
             FontOwner(const FontOwner&) = delete;
-            FontOwner& operator=(const FontOwner&) = delete;
+            FontOwner &operator=(const FontOwner&) = delete;
         };
 
         static FontOwner font;
@@ -64,7 +64,7 @@ namespace fullcopy {
     }
 
     // Joins two path parts with a single backslash.
-    std::wstring joinPath(const std::wstring& base, const std::wstring& part) {
+    std::wstring joinPath(const std::wstring &base, const std::wstring &part) {
         if (part.empty()) {
             return base;
         }
@@ -74,7 +74,7 @@ namespace fullcopy {
         return base + L'\\' + part;
     }
 
-    bool equalsIgnoreCase(const std::wstring& first, const std::wstring& second) {
+    bool equalsIgnoreCase(const std::wstring &first, const std::wstring &second) {
         return CompareStringOrdinal(first.c_str(),
                                     static_cast<int>(first.size()),
                                     second.c_str(),

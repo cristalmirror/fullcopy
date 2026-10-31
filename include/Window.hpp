@@ -19,7 +19,7 @@ namespace fullcopy {
         ~Window();
 
         Window(const Window&) = delete;
-        Window& operator=(const Window&) = delete;
+        Window &operator=(const Window&) = delete;
 
         bool create(int showCommand);
 
@@ -29,7 +29,7 @@ namespace fullcopy {
         void updateProgressBar(int percentage);
 
     private:
-        static const wchar_t* CLASS_NAME;
+        static const wchar_t *CLASS_NAME;
 
         static LRESULT CALLBACK windowProcedure(HWND window, UINT message, WPARAM wParam, LPARAM lParam);
         LRESULT handleMessage(UINT message, WPARAM wParam, LPARAM lParam);
@@ -46,9 +46,9 @@ namespace fullcopy {
         bool restoreAfterWorker();
         void finishWorker();
         void setControlsEnabled(bool enabled);
-        void setStatus(const std::wstring& text);
-        void setCurrentPath(const std::wstring& path);
-        void showError(const std::wstring& text);
+        void setStatus(const std::wstring &text);
+        void setCurrentPath(const std::wstring &path);
+        void showError(const std::wstring &text);
 
         // Copy thread: walks every entry, asks for a new name when needed and copies it.
         static DWORD WINAPI copyThread(LPVOID parameter);

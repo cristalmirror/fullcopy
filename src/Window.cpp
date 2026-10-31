@@ -7,15 +7,15 @@
 
 namespace fullcopy {
 
-    const wchar_t* Window::CLASS_NAME = L"FullCopyMainWindow";
+    const wchar_t *Window::CLASS_NAME = L"FullCopyMainWindow";
 
     namespace {
 
         const int CLIENT_WIDTH  = 522;
         const int CLIENT_HEIGHT = 244;
 
-        std::wstring trim(const std::wstring& text) {
-            const wchar_t* const SPACES = L" \t\r\n\"";
+        std::wstring trim(const std::wstring &text) {
+            const wchar_t *const SPACES = L" \t\r\n\"";
             const std::size_t first = text.find_first_not_of(SPACES);
             if (first == std::wstring::npos) {
                 return std::wstring();
@@ -24,7 +24,7 @@ namespace fullcopy {
             return text.substr(first, last - first + 1);
         }
 
-        bool startsWithIgnoreCase(const std::wstring& text, const std::wstring& prefix) {
+        bool startsWithIgnoreCase(const std::wstring &text, const std::wstring &prefix) {
             return text.size() >= prefix.size() && equalsIgnoreCase(text.substr(0, prefix.size()), prefix);
         }
 
@@ -188,8 +188,8 @@ namespace fullcopy {
 
     void Window::createControls() {
         auto createControl = [this](DWORD extendedStyle, 
-                                    const wchar_t* className,
-                                    const wchar_t* text,
+                                    const wchar_t *className,
+                                    const wchar_t *text,
                                     DWORD style, 
                                     int x, 
                                     int y, 
@@ -304,7 +304,7 @@ namespace fullcopy {
     }
 
     void Window::onBrowse(HWND targetEdit) {
-        IFileOpenDialog* dialog = nullptr;
+        IFileOpenDialog *dialog = nullptr;
         if (FAILED(CoCreateInstance(CLSID_FileOpenDialog, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&dialog)))) {
             showError(L"The folder dialog could not be opened.");
             return;
@@ -317,7 +317,7 @@ namespace fullcopy {
                                                     : L"Select the destination directory");
 
         if (SUCCEEDED(dialog->Show(window_))) {
-            IShellItem* item = nullptr;
+            IShellItem *item = nullptr;
             if (SUCCEEDED(dialog->GetResult(&item))) {
                 PWSTR path = nullptr;
                 if (SUCCEEDED(item->GetDisplayName(SIGDN_FILESYSPATH, &path))) {
@@ -345,8 +345,8 @@ namespace fullcopy {
         }
 
         copier_.setDirectories(source, destination);
-        const std::wstring& sourceRoot = copier_.getSourceRoot();
-        const std::wstring& destinationRoot = copier_.getDestinationRoot();
+        const std::wstring &sourceRoot = copier_.getSourceRoot();
+        const std::wstring &destinationRoot = copier_.getDestinationRoot();
 
         const DWORD attributes = GetFileAttributesW(sourceRoot.c_str());
         if (attributes == INVALID_FILE_ATTRIBUTES || (attributes & FILE_ATTRIBUTE_DIRECTORY) == 0) {
@@ -474,20 +474,20 @@ namespace fullcopy {
         EnableWindow(acceptButton_, value);
     }
 
-    void Window::setStatus(const std::wstring& text) {
+    void Window::setStatus(const std::wstring &text) {
         SetWindowTextW(statusLabel_, text.c_str());
     }   
 
-    void Window::setCurrentPath(const std::wstring& path) {
+    void Window::setCurrentPath(const std::wstring &path) {
         SetWindowTextW(pathLabel_, path.c_str());
     }
 
-    void Window::showError(const std::wstring& text) {
+    void Window::showError(const std::wstring &text) {
         MessageBoxW(window_, text.c_str(), L"FullCopy", MB_OK | MB_ICONERROR);
     }      
 
     DWORD WINAPI Window::copyThread(LPVOID parameter) {
-        auto* self = static_cast<Window*>(parameter);
+        auto *self = static_cast<Window*>(parameter);
         try {
             self->runCopy();
             return 0;

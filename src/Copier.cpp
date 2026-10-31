@@ -10,7 +10,7 @@
 namespace fullcopy {
 
     namespace {
-        bool isDirectory(const std::wstring& path) {
+        bool isDirectory(const std::wstring &path) {
             const DWORD attributes = GetFileAttributesW(path.c_str());
             return attributes != INVALID_FILE_ATTRIBUTES
                 && (attributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
@@ -27,7 +27,7 @@ namespace fullcopy {
             HANDLE,
             LPVOID context
         ) {
-            const auto* cancellation = static_cast<const std::atomic_bool*>(context);
+            const auto *cancellation = static_cast<const std::atomic_bool*>(context);
             if (cancellation != nullptr && cancellation->load()) {
                 return PROGRESS_CANCEL;
             }
@@ -45,22 +45,22 @@ namespace fullcopy {
         }
 
         FindHandle(const FindHandle&) = delete;
-        FindHandle& operator=(const FindHandle&) = delete;
+        FindHandle &operator=(const FindHandle&) = delete;
 
         private:
             HANDLE handle_;
         };
         
         // Names that Windows reserves for devices, with or without extension.
-        bool isReservedName(const std::wstring& name) {
-            static const wchar_t* const RESERVED[] = {
+        bool isReservedName(const std::wstring &name) {
+            static const wchar_t *const RESERVED[] = {
                 L"CON", L"PRN", L"AUX", L"NUL",
                 L"COM1", L"COM2", L"COM3", L"COM4", L"COM5", L"COM6", L"COM7", L"COM8", L"COM9",
                 L"LPT1", L"LPT2", L"LPT3", L"LPT4", L"LPT5", L"LPT6", L"LPT7", L"LPT8", L"LPT9"
             };
 
             const std::wstring baseName = name.substr(0, name.find(L'.'));
-            for (const wchar_t* reserved : RESERVED) {
+            for (const wchar_t *reserved : RESERVED) {
                 if (equalsIgnoreCase(baseName, reserved)) {
                     return true;
                 }
@@ -75,13 +75,13 @@ namespace fullcopy {
         tempSize_(0) {
     }
 
-    void Copier::setDirectories(const std::wstring& sourceRoot, const std::wstring& destinationRoot) {
+    void Copier::setDirectories(const std::wstring &sourceRoot, const std::wstring &destinationRoot) {
         sourceRoot_ = normalizePath(sourceRoot);
         destinationRoot_ = normalizePath(destinationRoot);
         entries_.clear();
     }
 
-    bool Copier::load(std::atomic_bool* cancellation) {
+    bool Copier::load(std::atomic_bool *cancellation) {
         entries_.clear();
 
         const DWORD attributes = GetFileAttributesW(getFullSourcePath(L"").c_str());
@@ -106,7 +106,7 @@ namespace fullcopy {
     }
 
     bool Copier::check(std::size_t index) {
-        const CopyEntry& entry = entries_[index];
+        const CopyEntry &entry = entries_[index];
 
         tempSize_ = getFullDestinationPath(index).size();
 
@@ -120,12 +120,12 @@ namespace fullcopy {
         return sizeApproved_;
     }
 
-    bool Copier::copy(std::size_t index, std::atomic_bool* cancellation) {
+    bool Copier::copy(std::size_t index, std::atomic_bool *cancellation) {
         if (cancellation != nullptr && cancellation->load()) {
             return false;
         }
 
-        const CopyEntry& entry = entries_.at(index);
+        const CopyEntry &entry = entries_.at(index);
         if (entry.skipped) {
             return true;
         }
@@ -151,7 +151,7 @@ namespace fullcopy {
         ) != FALSE;
     }
 
-    RenameResult Copier::rename(std::size_t index, const std::wstring& newName) {
+    RenameResult Copier::rename(std::size_t index, const std::wstring &newName) {
         if (newName.empty()) {
             return RenameResult::Empty;
         }
@@ -162,7 +162,7 @@ namespace fullcopy {
             return RenameResult::TooLong;
         }
 
-        CopyEntry& entry = entries_[index];
+        CopyEntry &entry = entries_[index];
         const std::wstring oldPath = entry.destinationPath;
         const std::size_t separator = oldPath.find_last_of(L'\\');
         const std::wstring parent = separator == std::wstring::npos ? L"" : oldPath.substr(0, separator + 1);
@@ -193,7 +193,7 @@ namespace fullcopy {
         if (entry.isDirectory) {
             const std::wstring oldPrefix = oldPath + L'\\';
             for (std::size_t i = index + 1; i < entries_.size(); ++i) {
-                std::wstring& path = entries_[i].destinationPath;
+                std::wstring &path = entries_[i].destinationPath;
                 if (startsWith(path, oldPrefix)) {
                     path = newPath + L'\\' + path.substr(oldPrefix.size());
                 }
@@ -204,7 +204,7 @@ namespace fullcopy {
     }
 
     void Copier::skip(std::size_t index) {
-        CopyEntry& entry = entries_[index];
+        CopyEntry &entry = entries_[index];
         entry.skipped = true;
 
         if (entry.isDirectory) {
@@ -221,12 +221,12 @@ namespace fullcopy {
         return entries_.size();
     }
 
-    const CopyEntry& Copier::getEntry(std::size_t index) const {
+    const CopyEntry &Copier::getEntry(std::size_t index) const {
         return entries_[index];
     }
 
     std::wstring Copier::getDestinationName(std::size_t index) const {
-        const std::wstring& path = entries_[index].destinationPath;
+        const std::wstring &path = entries_[index].destinationPath;
         const std::size_t separator = path.find_last_of(L'\\');
         return separator == std::wstring::npos ? path : path.substr(separator + 1);
     }
@@ -251,11 +251,11 @@ namespace fullcopy {
         return std::min(limit - usedLength, MAX_NAME_LENGTH);
     }
 
-    const std::wstring& Copier::getSourceRoot() const {
+    const std::wstring &Copier::getSourceRoot() const {
         return sourceRoot_;
     }
 
-    const std::wstring& Copier::getDestinationRoot() const {
+    const std::wstring &Copier::getDestinationRoot() const {
         return destinationRoot_;
     }
 
@@ -267,7 +267,7 @@ namespace fullcopy {
         return tempSize_;
     }
 
-    bool Copier::scanDirectory(const std::wstring& relativePath, std::atomic_bool* cancellation) {
+    bool Copier::scanDirectory(const std::wstring &relativePath, std::atomic_bool *cancellation) {
         if (cancellation != nullptr && cancellation->load()) {
             return false;
         }
@@ -322,7 +322,7 @@ namespace fullcopy {
      *The source is read with the "\\?\" prefix, so long names can be read even
      *though they can not be written to the destination.\
      */
-    std::wstring Copier::getFullSourcePath(const std::wstring& relativePath) const {
+    std::wstring Copier::getFullSourcePath(const std::wstring &relativePath) const {
     std::wstring root;
         if (startsWith(sourceRoot_, L"\\\\?\\")) {
             root = sourceRoot_;
@@ -335,7 +335,7 @@ namespace fullcopy {
     }
 
     // Returns the absolute path without the trailing backslash (except for drive roots like "C:\").
-    std::wstring Copier::normalizePath(const std::wstring& path) {
+    std::wstring Copier::normalizePath(const std::wstring &path) {
         std::wstring result = path;
 
         const DWORD length = GetFullPathNameW(path.c_str(), 0, nullptr, nullptr);
@@ -357,7 +357,7 @@ namespace fullcopy {
         return result;
     }
 
-    bool Copier::isValidName(const std::wstring& name) {
+    bool Copier::isValidName(const std::wstring &name) {
         if (name == L"." || name == L"..") {
             return false;
         }
@@ -376,7 +376,7 @@ namespace fullcopy {
         return !isReservedName(name);
     }
 
-    bool Copier::startsWith(const std::wstring& text, const std::wstring& prefix) {
+    bool Copier::startsWith(const std::wstring &text, const std::wstring &prefix) {
         return text.size() >= prefix.size() && text.compare(0, prefix.size(), prefix) == 0;
     }
 

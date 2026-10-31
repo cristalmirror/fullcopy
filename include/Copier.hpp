@@ -37,12 +37,12 @@ namespace fullcopy {
 
         Copier();
 
-        void setDirectories(const std::wstring& sourceRoot, const std::wstring& destinationRoot);
+        void setDirectories(const std::wstring &sourceRoot, const std::wstring &destinationRoot);
 
         // Scans the source directory and all its subdirectories.
         // Returns false on cancellation, any scan error, or an invalid destination.
         // A failed scan discards all partial entries.
-        bool load(std::atomic_bool* cancellation = nullptr);
+        bool load(std::atomic_bool *cancellation = nullptr);
 
         // Checks that the destination path of an entry is short enough to be copied.
         // Updates sizeApproved_ and tempSize_ and returns sizeApproved_.
@@ -50,35 +50,35 @@ namespace fullcopy {
 
         // Copies one entry without overwriting existing files. Cancellation removes
         // the partial file created by the current copy operation.
-        bool copy(std::size_t index, std::atomic_bool* cancellation = nullptr);
+        bool copy(std::size_t index, std::atomic_bool *cancellation = nullptr);
 
         // Gives a new destination name to an entry. When the entry is a directory,
         // everything inside it is moved under the new name too.
-        RenameResult rename(std::size_t index, const std::wstring& newName);
+        RenameResult rename(std::size_t index, const std::wstring &newName);
 
         // Marks an entry (and its content, if it is a directory) as not to be copied.
         void skip(std::size_t index);
 
         std::size_t getEntryCount() const;
-        const CopyEntry& getEntry(std::size_t index) const;
+        const CopyEntry &getEntry(std::size_t index) const;
         std::wstring getDestinationName(std::size_t index) const;
         std::wstring getFullDestinationPath(std::size_t index) const;
 
         // Longest name the entry can have so its destination path fits (0 if none fits).
         std::size_t getMaxNameLength(std::size_t index) const;
 
-        const std::wstring& getSourceRoot() const;
-        const std::wstring& getDestinationRoot() const;
+        const std::wstring &getSourceRoot() const;
+        const std::wstring &getDestinationRoot() const;
         bool isSizeApproved() const;
         std::size_t getTempSize() const;
 
     private:
         std::size_t getPathLengthLimit(std::size_t index) const;
-        bool scanDirectory(const std::wstring& relativePath, std::atomic_bool* cancellation);
-        std::wstring getFullSourcePath(const std::wstring& relativePath) const;
-        static std::wstring normalizePath(const std::wstring& path);
-        static bool isValidName(const std::wstring& name);
-        static bool startsWith(const std::wstring& text, const std::wstring& prefix);
+        bool scanDirectory(const std::wstring &relativePath, std::atomic_bool *cancellation);
+        std::wstring getFullSourcePath(const std::wstring &relativePath) const;
+        static std::wstring normalizePath(const std::wstring &path);
+        static bool isValidName(const std::wstring &name);
+        static bool startsWith(const std::wstring &text, const std::wstring &prefix);
 
         bool sizeApproved_;
         std::size_t tempSize_;

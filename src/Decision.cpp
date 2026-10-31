@@ -7,7 +7,7 @@
 
 namespace fullcopy {
 
-    const wchar_t* Decision::CLASS_NAME = L"FullCopyDecisionWindow";
+    const wchar_t *Decision::CLASS_NAME = L"FullCopyDecisionWindow";
 
     namespace {
 
@@ -16,7 +16,7 @@ namespace fullcopy {
 
     } // namespace
 
-    Decision::Decision(HINSTANCE instance, Copier& copier, std::size_t entryIndex)
+    Decision::Decision(HINSTANCE instance, Copier &copier, std::size_t entryIndex)
     : instance_(instance),
       copier_(copier),
       entryIndex_(entryIndex),
