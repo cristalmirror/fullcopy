@@ -115,7 +115,7 @@ namespace fullcopy {
             return sizeApproved_;
         }
 
-        const std::size_t limit = entry.isDirectory ? MAX_DIRECTORY_PATH_LENGTH : MAX_FILE_PATH_LENGTH;
+        const std::size_t limit = getPathLengthLimit(index);
         sizeApproved_ = tempSize_ <= limit && getDestinationName(index).size() <= MAX_NAME_LENGTH;
         return sizeApproved_;
     }
@@ -235,10 +235,14 @@ namespace fullcopy {
         return joinPath(destinationRoot_, entries_[index].destinationPath);
     }
 
+    std::size_t Copier::getPathLengthLimit(std::size_t index) const {
+        return entries_[index].isDirectory ? MAX_DIRECTORY_PATH_LENGTH : MAX_FILE_PATH_LENGTH;
+    }
+
     std::size_t Copier::getMaxNameLength(std::size_t index) const {
         const std::size_t fullLength = getFullDestinationPath(index).size();
         const std::size_t nameLength = getDestinationName(index).size();
-        const std::size_t limit = entries_[index].isDirectory ? MAX_DIRECTORY_PATH_LENGTH : MAX_FILE_PATH_LENGTH;
+        const std::size_t limit = getPathLengthLimit(index);
         const std::size_t usedLength = fullLength - nameLength;
 
         if (usedLength >= limit) {

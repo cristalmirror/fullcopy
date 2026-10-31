@@ -78,6 +78,7 @@ public:
     std::size_t getTempSize() const;
 
 private:
+    std::size_t getPathLengthLimit(std::size_t index) const;
     bool scanDirectory(const std::wstring& relativePath, std::atomic_bool* cancellation);
     std::wstring getFullSourcePath(const std::wstring& relativePath) const;
     static std::wstring normalizePath(const std::wstring& path);

@@ -96,6 +96,7 @@ classDiagram
         +getDestinationRoot() wstring
         +isSizeApproved() bool
         +getTempSize() size_t
+        -getPathLengthLimit(size_t index) size_t
         -scanDirectory(wstring relativePath, atomic_bool* cancellation) bool
         -getFullSourcePath(wstring relativePath) wstring
         -normalizePath(wstring path)$ wstring
