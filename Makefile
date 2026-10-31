@@ -3,6 +3,10 @@
 #   make docker   Builds the Docker image and compiles inside it (recommended).
 #   make          Compiles directly (needs x86_64-w64-mingw32-g++ installed).
 #   make clean    Removes the build files.
+#
+# The executable name includes the version: bin/fullcopy-$(VERSION).exe
+
+VERSION   := 1.0.0
 
 CXX       := x86_64-w64-mingw32-g++
 WINDRES   := x86_64-w64-mingw32-windres
@@ -12,7 +16,7 @@ INC_DIR   := include
 RES_DIR   := resources
 BUILD_DIR := build
 BIN_DIR   := bin
-TARGET    := $(BIN_DIR)/fullcopy.exe
+TARGET    := $(BIN_DIR)/fullcopy-$(VERSION).exe
 
 SOURCES   := $(wildcard $(SRC_DIR)/*.cpp)
 OBJECTS   := $(patsubst $(SRC_DIR)/%.cpp,$(BUILD_DIR)/%.o,$(SOURCES))
