@@ -112,6 +112,8 @@ void renameAndSkip() {
     require(!fs::exists(f.destination / L"renamed"), "Skipped directory copied");
     require(read(f.destination / L"other") == "other", "Sibling lost");
     // A fresh scan must discard the previous skip/rename state.
+    // Start from an empty destination: existing files are never overwritten.
+    fs::remove_all(f.destination);
     require(copier.load(), "Reload failed");
     copyAll(copier);
     require(read(f.destination / L"original" / L"child") == "child", "Reload retained stale state");
