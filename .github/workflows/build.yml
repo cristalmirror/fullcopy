@@ -13,7 +13,7 @@ permissions:
 
 jobs:
   build:
-    name: Build fullcopy.exe
+    name: Build fullcopy executable
     runs-on: ubuntu-latest
 
     steps:
@@ -27,7 +27,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: fullcopy
-          path: bin/fullcopy.exe
+          path: bin/fullcopy-*.exe
           if-no-files-found: error
 
   release:
@@ -47,5 +47,5 @@ jobs:
       - name: Create the GitHub release
         uses: softprops/action-gh-release@v2
         with:
-          files: fullcopy.exe
+          files: fullcopy-*.exe
           generate_release_notes: true

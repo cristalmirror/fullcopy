@@ -1,6 +1,6 @@
 # FullCopy
 
-**Version 0.0.1**
+**Version 1.0.0**
 
 FullCopy is a Windows desktop application that copies a directory with all its subdirectories and files.
 When a file or directory name is too long to be copied (the destination path goes over the Windows
@@ -10,7 +10,7 @@ Written in C++17 with the Win32 API. It is cross-compiled from Linux with MinGW-
 
 ## Usage
 
-1. Run `fullcopy.exe` on Windows (no installation or extra DLLs needed).
+1. Run `fullcopy-1.0.0.exe` on Windows (no installation or extra DLLs needed).
 2. Choose the **Source directory** and the **Destination directory**, typing the paths or with the
    **Browse...** buttons.
 3. Press **Start**. The progress bar shows how much of the copy is done.
@@ -54,7 +54,9 @@ make docker
 ```
 
 This builds the `fullcopy-builder` image (latest Fedora with the MinGW-w64 compiler) and compiles the
-project inside it. The result is `bin/fullcopy.exe`.
+project inside it. The result is `bin/fullcopy-1.0.0.exe`.
+
+The version is defined by the `VERSION` variable at the top of the `Makefile`.
 
 To use podman instead of docker:
 
@@ -74,7 +76,7 @@ make
 
 | Command | Description |
 |---|---|
-| `make debug` | Builds `bin/debug/fullcopy.exe` with debug symbols, assertions and stack protection. |
+| `make debug` | Builds `bin/debug/fullcopy-1.0.0.exe` with debug symbols, assertions and stack protection. |
 | `make docker-debug` | Builds the debug executable inside Docker. |
 | `make clean` | Removes the `build/` and `bin/` directories. |
 | `make clean && make docker` | Builds everything from scratch. |
