@@ -129,6 +129,7 @@ classDiagram
         +WM_APP_COPY_FAILED$ UINT
         +equalsIgnoreCase(wstring first, wstring second) bool
         +joinPath(wstring base, wstring part) wstring
+        +dispatchWindowMessage~Owner~(HWND, UINT, WPARAM, LPARAM, windowMember, handler) LRESULT
         +getUiFont() HFONT
         +applyUiFont(HWND window) void
         +getWindowString(HWND window) wstring

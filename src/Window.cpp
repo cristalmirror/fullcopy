@@ -122,28 +122,8 @@ namespace fullcopy {
     }
 
     LRESULT CALLBACK Window::windowProcedure(HWND window, UINT message, WPARAM wParam, LPARAM lParam) {
-        Window* self = nullptr;
-
-        if (message == WM_NCCREATE) {
-            const CREATESTRUCTW* createStruct = reinterpret_cast<CREATESTRUCTW*>(lParam);
-            self = static_cast<Window*>(createStruct->lpCreateParams);
-            SetWindowLongPtrW(window, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(self));
-            self->window_ = window;
-        } else {
-        self = reinterpret_cast<Window*>(GetWindowLongPtrW(window, GWLP_USERDATA));
-        }
-
-        if (self == nullptr) {
-            return DefWindowProcW(window, message, wParam, lParam);
-        }
-
-        if (message == WM_NCDESTROY) {
-            SetWindowLongPtrW(window, GWLP_USERDATA, 0);
-            self->window_ = nullptr;
-            return DefWindowProcW(window, message, wParam, lParam);
-        }
-
-        return self->handleMessage(message, wParam, lParam);
+        return dispatchWindowMessage(window, message, wParam, lParam,
+                                     &Window::window_, &Window::handleMessage);
     }
 
     LRESULT Window::handleMessage(UINT message, WPARAM wParam, LPARAM lParam) {

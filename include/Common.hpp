@@ -46,6 +46,32 @@ bool equalsIgnoreCase(const std::wstring& first, const std::wstring& second);
 // Joins a nonempty base path and a relative part with a backslash.
 std::wstring joinPath(const std::wstring& base, const std::wstring& part);
 
+// Associates a native window with its owner and dispatches its messages.
+template<typename Owner>
+LRESULT dispatchWindowMessage(HWND window, UINT message, WPARAM wParam, LPARAM lParam,
+                              HWND Owner::* windowMember,
+                              LRESULT (Owner::* handler)(UINT, WPARAM, LPARAM)) {
+    Owner* self = nullptr;
+    if (message == WM_NCCREATE) {
+        const auto* creation = reinterpret_cast<const CREATESTRUCTW*>(lParam);
+        self = static_cast<Owner*>(creation->lpCreateParams);
+        SetWindowLongPtrW(window, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(self));
+        self->*windowMember = window;
+    } else {
+        self = reinterpret_cast<Owner*>(GetWindowLongPtrW(window, GWLP_USERDATA));
+    }
+
+    if (self == nullptr) {
+        return DefWindowProcW(window, message, wParam, lParam);
+    }
+    if (message == WM_NCDESTROY) {
+        SetWindowLongPtrW(window, GWLP_USERDATA, 0);
+        self->*windowMember = nullptr;
+        return DefWindowProcW(window, message, wParam, lParam);
+    }
+    return (self->*handler)(message, wParam, lParam);
+}
+
 } // namespace fullcopy
 
 #endif // FULLCOPY_COMMON_HPP
