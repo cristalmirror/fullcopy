@@ -17,7 +17,7 @@ To reproduce in a Windows MSYS2 MINGW64 shell with GCC and make installed, run
 `make CXX=g++ WINDRES=windres`, then:
 
 ```sh
-g++ -std=c++17 -O2 -Wall -Wextra -Werror -DUNICODE -D_UNICODE -D_WIN32_WINNT=0x0601 -Iinclude tests/copier_tests.cpp src/Copier.cpp -o bin/copier_tests.exe -static -lshell32 -lole32 -luuid
+g++ -std=c++17 -O2 -Wall -Wextra -Werror -DUNICODE -D_UNICODE -D_WIN32_WINNT=0x0601 -Iinclude tests/copier_tests.cpp src/Copier.cpp src/Common.cpp -o bin/copier_tests.exe -static -lshell32 -lole32 -luuid
 ./bin/copier_tests.exe
 ```
 
