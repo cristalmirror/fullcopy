@@ -128,6 +128,7 @@ classDiagram
         +WM_APP_COPY_FINISHED$ UINT
         +WM_APP_COPY_FAILED$ UINT
         +equalsIgnoreCase(wstring first, wstring second) bool
+        +joinPath(wstring base, wstring part) wstring
         +getUiFont() HFONT
         +applyUiFont(HWND window) void
         +getWindowString(HWND window) wstring

@@ -467,12 +467,7 @@ namespace fullcopy {
             return;
         }
 
-        std::wstring path = copier_.getSourceRoot();
-        if (!path.empty() && path.back() != L'\\') {
-            path += L'\\';
-        }
-        path += copier_.getEntry(entryIndex).sourcePath;
-        setCurrentPath(path);
+        setCurrentPath(joinPath(copier_.getSourceRoot(), copier_.getEntry(entryIndex).sourcePath));
     }
 
     void Window::finishWorker() {

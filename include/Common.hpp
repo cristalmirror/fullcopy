@@ -43,6 +43,9 @@ std::wstring getWindowString(HWND window);
 // Compares strings using Windows ordinal case-insensitive rules.
 bool equalsIgnoreCase(const std::wstring& first, const std::wstring& second);
 
+// Joins a nonempty base path and a relative part with a backslash.
+std::wstring joinPath(const std::wstring& base, const std::wstring& part);
+
 } // namespace fullcopy
 
 #endif // FULLCOPY_COMMON_HPP

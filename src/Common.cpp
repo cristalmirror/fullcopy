@@ -63,6 +63,17 @@ namespace fullcopy {
         return text;
     }
 
+    // Joins two path parts with a single backslash.
+    std::wstring joinPath(const std::wstring& base, const std::wstring& part) {
+        if (part.empty()) {
+            return base;
+        }
+        if (!base.empty() && base.back() == L'\\') {
+            return base + part;
+        }
+        return base + L'\\' + part;
+    }
+
     bool equalsIgnoreCase(const std::wstring& first, const std::wstring& second) {
         return CompareStringOrdinal(first.c_str(),
                                     static_cast<int>(first.size()),

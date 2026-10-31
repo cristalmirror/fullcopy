@@ -51,17 +51,6 @@ namespace fullcopy {
             HANDLE handle_;
         };
         
-        // Joins two path parts with a single backslash.
-        std::wstring joinPath(const std::wstring& base, const std::wstring& part) {
-            if (part.empty()) {
-                return base;
-            }
-            if (!base.empty() && base.back() == L'\\') {
-                return base + part;
-            }
-            return base + L'\\' + part;
-        }
-
         // Names that Windows reserves for devices, with or without extension.
         bool isReservedName(const std::wstring& name) {
             static const wchar_t* const RESERVED[] = {
