@@ -44,10 +44,13 @@ namespace fullcopy {
     std::wstring joinPath(const std::wstring& base, const std::wstring& part);
 
     // Associates a native window with its owner and dispatches its messages.
-    template<typename Owner>
-    LRESULT dispatchWindowMessage(HWND window, UINT message, WPARAM wParam, LPARAM lParam,
-                                  HWND Owner::* windowMember,
-                                  LRESULT (Owner::* handler)(UINT, WPARAM, LPARAM)) {
+    template<typename Owner> 
+    LRESULT dispatchWindowMessage( HWND window,
+                                   UINT message, 
+                                   WPARAM wParam, 
+                                   LPARAM lParam,
+                                   HWND Owner::* windowMember,
+                                   LRESULT (Owner::* handler)(UINT, WPARAM, LPARAM)) {
         Owner* self = nullptr;
         if (message == WM_NCCREATE) {
             const auto* creation = reinterpret_cast<const CREATESTRUCTW*>(lParam);

@@ -116,13 +116,21 @@ namespace fullcopy {
         }
 
         loadPercentage_ = percentage;
-        SendMessageW(progressBar_, PBM_SETPOS, static_cast<WPARAM>(loadPercentage_), 0);
+        SendMessageW(progressBar_, 
+                     PBM_SETPOS, 
+                     static_cast<WPARAM>(loadPercentage_),
+                     0);
+
         setStatus(L"Copying... " + std::to_wstring(loadPercentage_) + L"%");
     }
 
     LRESULT CALLBACK Window::windowProcedure(HWND window, UINT message, WPARAM wParam, LPARAM lParam) {
-        return dispatchWindowMessage(window, message, wParam, lParam,
-                                     &Window::window_, &Window::handleMessage);
+        return dispatchWindowMessage(window,
+                                     message, 
+                                     wParam, 
+                                     lParam,
+                                     &Window::window_, 
+                                     &Window::handleMessage);
     }
 
     LRESULT Window::handleMessage(UINT message, WPARAM wParam, LPARAM lParam) {
