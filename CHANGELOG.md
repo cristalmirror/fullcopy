@@ -7,6 +7,12 @@ and this project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-10-31
+
+### Changed
+
+- First stable release. The executable is now named with its version (`fullcopy-1.0.0.exe`), set by `VERSION` in the `Makefile`.
+
 ### Fixed
 
 - Reject rename targets that already exist in the destination and prevent file overwrites during copying.
