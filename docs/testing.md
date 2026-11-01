@@ -2,8 +2,9 @@
 
 Automated checks run on a real Windows GitHub Actions runner. They build the
 application with warnings treated as errors and execute filesystem integration
-tests against `Copier` and UI tests against the `Controller` and its windows. No
-application behavior is changed by this test suite.
+tests against `Copier` and UI tests against the `Controller` and its windows. They
+also build and run the tool that creates the manual test data. No application
+behavior is changed by this test suite.
 
 ## Automated coverage
 
@@ -31,6 +32,9 @@ the main thread, while a driver thread plays the user with window messages only:
 - Closing the program while the **Name too long** window is open shows *Cancelling...*, waits for
   the copy thread and closes without a summary.
 
+The test data tool (see [Test data](#test-data)) is built with warnings treated as errors, creates
+a small tree with long names, and must refuse a directory that already exists.
+
 To reproduce in a Windows MSYS2 MINGW64 shell with GCC and make installed, run
 `make CXX=g++ WINDRES=windres`, then:
 
@@ -57,12 +61,37 @@ all cases. Do not mark unexecuted checks as passed.
 |---|---|---|
 | Original folder lock report | Create a destination through Browse, select it, copy, close FullCopy, then delete it. Repeat after cancelling Browse and without starting a copy. | The process exits and deletion succeeds immediately. If blocked, record the owning process with Resource Monitor. |
 | Cancellation | Close during scanning and during a large-file copy; also close with a rename dialog open. | No crash or deadlock. Shutdown may wait for the current synchronous copy/scan; record the delay. Partial output is allowed. A product decision is needed if the delay is unacceptable. |
-| UI and decisions | Use Enter, Escape and X; repeatedly rename or skip long-path directories. | Correct subtree handling, responsive UI, accurate summary and no stale dialogs. |
+| UI and decisions | Use Enter, Escape and X; repeatedly rename or skip long-path directories (use the [test data](#test-data) tree). | Correct subtree handling, responsive UI, accurate summary and no stale dialogs. |
 | Input validation | Same source/destination, destination nested in source, blank fields and mixed-case paths. | Invalid operations are rejected before copying. |
 | Filesystem errors | Read-only destination, locked source file, denied permissions and exhausted disposable test volume. | Failures are reported without a crash, hang or false successful summary. Never fill the system volume. |
-| Integrity and repetition | Copy a tree containing at least 10,000 files and a multi-GB file; compare relative paths and SHA-256 hashes. Repeat 20 times. | All expected files match, skipped items are absent, and the process remains usable. |
+| Integrity and repetition | Copy a tree containing at least 10,000 files (the [test data](#test-data) tree) and a multi-GB file; compare relative paths and SHA-256 hashes. Repeat 20 times. | All expected files match, skipped items are absent, and the process remains usable. |
 | Resource lifetime | Monitor private bytes, handles and GDI objects over 100 Browse/copy/rename cycles, after warming up. | No sustained cycle-by-cycle growth. Capture counts and investigate growth; a single snapshot is insufficient. |
-| Long paths and links | Use source paths over 260 characters, a deeply nested tree, and a junction loop in a disposable fixture. | Long names can be shortened/skipped; no recursion loop or crash. Document supported depth. Junctions are copied as empty directories. |
+| Long paths and links | Use source paths over 260 characters (the [test data](#test-data) tree), a deeply nested tree, and a junction loop in a disposable fixture. | Long names can be shortened/skipped; no recursion loop or crash. Document supported depth. Junctions are copied as empty directories. |
+
+### Test data
+
+`tests/generate_manual_tree.cpp` is a command line tool that creates a source tree for these
+checks: 10 directories with 1000 files each. Some directories and files, chosen at random, have
+names of 245 to 255 characters, so their destination paths go over the Windows limits and the
+**Name too long** window appears. A single name can not be longer than 255 characters, so it is
+the full path that goes over 260 characters. Every file contains a short message of 100
+characters at most. The tree is written with the `\\?\` prefix.
+
+Build it with `make docker-manual-tree` (or `make manual-tree` with MinGW-w64), copy
+`bin/generate_manual_tree.exe` to the Windows test machine, and run it with a path that does not
+exist yet:
+
+```bat
+generate_manual_tree.exe C:\fullcopy-source
+```
+
+It prints the seed, how many **Name too long** windows to expect, and the command to delete the
+tree. Run `generate_manual_tree.exe --help` for the options: `--directories`, `--files`,
+`--long-directories`, `--long-files` and `--seed` (the same seed creates the same tree). Write
+the seed in the record of each check, so the same tree can be created again.
+
+The tool creates one level of directories with small text files only. Prepare the deeply nested
+tree, the junction loop and the multi-GB file by hand.
 
 For memory corruption investigation, repeat the UI and stress cases under Windows
 Application Verifier and full page heap when available. Save diagnostic logs and

@@ -25,6 +25,8 @@ and this project uses [Semantic Versioning](https://semver.org/).
 - UML activity diagrams in `docs/flow_diagram.md`.
 - Tests for `Copier::checkDirectories()`, and UI tests (`tests/ui_tests.cpp`) that drive the
   `Controller`, the main window and the **Name too long** window. Both run on the Windows CI job.
+- `generate_manual_tree`, a command line tool (`make manual-tree`) that creates a source tree of
+  10000 files with random long names for the manual checks.
 
 ## [1.0.0] - 2026-10-31
 

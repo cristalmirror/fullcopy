@@ -78,17 +78,38 @@ make
 |---|---|
 | `make debug` | Builds `bin/debug/fullcopy-1.0.1.exe` with debug symbols, assertions and stack protection. |
 | `make docker-debug` | Builds the debug executable inside Docker. |
+| `make manual-tree` | Builds `bin/generate_manual_tree.exe`, which creates the data for the manual tests ([docs/testing.md](docs/testing.md)). |
+| `make docker-manual-tree` | Builds that tool inside Docker. |
 | `make clean` | Removes the `build/` and `bin/` directories. |
 | `make clean && make docker` | Builds everything from scratch. |
 
 `make: Nothing to be done for 'all'.` means the executable is already up to date.
+
+## Testing
+
+The Windows CI job (`.github/workflows/tests.yml`) builds everything with warnings treated as
+errors and runs the integration tests of `Copier` and the UI tests of the windows. To run them in a
+Windows MSYS2 shell, follow [docs/testing.md](docs/testing.md).
+
+For the manual checks, build the test data tool and run it on Windows with a new directory:
+
+```sh
+make docker-manual-tree
+```
+
+```bat
+generate_manual_tree.exe C:\fullcopy-source
+```
+
+It creates 10 directories with 1000 files each, where some names are long enough to open the
+**Name too long** window. [docs/testing.md](docs/testing.md) lists the manual checks and its options.
 
 ## Project structure
 
 ```
 include/      Class definitions (.hpp)
 src/          Class implementations (.cpp) and main.cpp
-tests/        Integration tests for Copier and UI tests for the windows
+tests/        Integration and UI tests, and a generator of manual test data
 resources/    Windows manifest (modern look for the controls)
 docs/         Class diagram, flow diagrams and test plan
 Dockerfile    Build environment (Fedora + MinGW-w64)
