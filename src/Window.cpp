@@ -4,6 +4,8 @@
 #include <shobjidl.h>
 
 #include "Common.hpp"
+#include "Controller.hpp"
+#include "Copier.hpp"
 
 namespace fullcopy {
 
@@ -14,24 +16,11 @@ namespace fullcopy {
         const int CLIENT_WIDTH  = 522;
         const int CLIENT_HEIGHT = 244;
 
-        std::wstring trim(const std::wstring &text) {
-            const wchar_t *const SPACES = L" \t\r\n\"";
-            const std::size_t first = text.find_first_not_of(SPACES);
-            if (first == std::wstring::npos) {
-                return std::wstring();
-            }
-            const std::size_t last = text.find_last_not_of(SPACES);
-            return text.substr(first, last - first + 1);
-        }
-
-        bool startsWithIgnoreCase(const std::wstring &text, const std::wstring &prefix) {
-            return text.size() >= prefix.size() && equalsIgnoreCase(text.substr(0, prefix.size()), prefix);
-        }
-
     } // namespace
 
-    Window::Window(HINSTANCE instance)
+    Window::Window(HINSTANCE instance, Controller &controller)
         : instance_(instance),
+        controller_(controller),
         window_(nullptr),
         loadPercentage_(0),
         sourceDirectory_(nullptr),
@@ -42,17 +31,7 @@ namespace fullcopy {
         startButton_(nullptr),
         progressBar_(nullptr),
         pathLabel_(nullptr),
-        statusLabel_(nullptr),
-        workerThread_(nullptr),
-        cancelRequested_(0),
-        closePending_(false) {
-    }
-
-    Window::~Window() {
-        if (workerThread_ != nullptr) {
-            cancelRequested_.store(true);
-            finishWorker();
-        }
+        statusLabel_(nullptr) {
     }
 
     bool Window::create(int showCommand) {
@@ -146,7 +125,7 @@ namespace fullcopy {
                     case IDOK: // Enter key.
                     case ID_START_BUTTON:
                         if (IsWindowEnabled(startButton_)) {
-                            onStart();
+                            controller_.onStart();
                         }
                     return 0;
             case ID_ACCEPT_BUTTON:
@@ -155,27 +134,28 @@ namespace fullcopy {
             }
         break;
 
+        // Messages from the copy thread: the Controller handles them on this thread.
         case WM_APP_PROGRESS:
-            updateProgressBar(static_cast<int>(wParam));
+            controller_.onProgress(static_cast<int>(wParam));
             return 0;
 
         case WM_APP_RENAME_REQUEST:
-            return onRenameRequest(static_cast<std::size_t>(wParam));
+            return controller_.onRenameRequest(static_cast<std::size_t>(wParam)) ? TRUE : FALSE;
 
         case WM_APP_COPY_FINISHED:
-            onCopyFinished(static_cast<std::size_t>(wParam), static_cast<std::size_t>(lParam));
+            controller_.onCopyFinished(static_cast<std::size_t>(wParam), static_cast<std::size_t>(lParam));
             return 0;
 
         case WM_APP_COPY_FAILED:
-            onCopyFailed();
+            controller_.onCopyFailed();
             return 0;
 
         case WM_APP_CURRENT_ENTRY:
-            onCurrentEntry(static_cast<std::size_t>(wParam));
+            controller_.onCurrentEntry(static_cast<std::size_t>(wParam));
             return 0;
 
         case WM_CLOSE:
-            onClose();
+            controller_.onClose();
             return 0;
 
         case WM_DESTROY:
@@ -331,87 +311,71 @@ namespace fullcopy {
         dialog->Release();
     }
 
-    void Window::onStart() {
-        if (workerThread_ != nullptr) {
-            return;
-        }   
+    void Window::close() {
+        DestroyWindow(window_);
+    }
 
-        const std::wstring source = trim(getWindowString(sourceDirectory_));
-        const std::wstring destination = trim(getWindowString(destinationDirectory_));
+    HWND Window::getHandle() const {
+        return window_;
+    }
 
-        if (source.empty() || destination.empty()) {
-            showError(L"Select both the source and the destination directories.");
-            return;
+    std::wstring Window::getSourceDirectory() const {
+        return getWindowString(sourceDirectory_);
+    }
+
+    std::wstring Window::getDestinationDirectory() const {
+        return getWindowString(destinationDirectory_);
+    }
+
+    bool Window::askNewName(const RenameRequest &request) {
+        decision_.reset(new Decision(instance_, controller_, request));
+        const bool renamed = decision_->show(window_);
+        decision_.reset();
+
+        return renamed;
+    }
+
+    void Window::setCurrentPath(const std::wstring &path) {
+        SetWindowTextW(pathLabel_, path.c_str());
+    }
+
+    void Window::showDirectoryError(DirectoryResult result) {
+        switch (result) {
+            case DirectoryResult::Ok:
+                return;
+            case DirectoryResult::Empty:
+                showError(L"Select both the source and the destination directories.");
+                return;
+            case DirectoryResult::SourceNotFound:
+                showError(L"The source directory does not exist.");
+                return;
+            case DirectoryResult::SameDirectory:
+                showError(L"The source and the destination directories must be different.");
+                return;
+            case DirectoryResult::DestinationInsideSource:
+                showError(L"The destination directory can not be inside the source directory.");
+                return;
         }
+    }
 
-        copier_.setDirectories(source, destination);
-        const std::wstring &sourceRoot = copier_.getSourceRoot();
-        const std::wstring &destinationRoot = copier_.getDestinationRoot();
-
-        const DWORD attributes = GetFileAttributesW(sourceRoot.c_str());
-        if (attributes == INVALID_FILE_ATTRIBUTES || (attributes & FILE_ATTRIBUTE_DIRECTORY) == 0) {
-            showError(L"The source directory does not exist.");
-            return;
-        }
-
-        if (equalsIgnoreCase(sourceRoot, destinationRoot)) {
-            showError(L"The source and the destination directories must be different.");
-            return;
-        }
-
-        const std::wstring sourcePrefix = sourceRoot.back() == L'\\' ? sourceRoot : sourceRoot + L'\\';
-        if (startsWithIgnoreCase(destinationRoot, sourcePrefix)) {
-            showError(L"The destination directory can not be inside the source directory.");
-            return;
-        }
-
-        cancelRequested_.store(false);
-        closePending_ = false;
+    void Window::showCopyStarted() {
         setControlsEnabled(false);
         updateProgressBar(0);
         setStatus(L"Reading the source directory...");
         setCurrentPath(L"");
-
-        workerThread_ = CreateThread(nullptr, 0, copyThread, this, 0, nullptr);
-        if (workerThread_ == nullptr) {
-            setControlsEnabled(true);
-            showError(L"The copy could not be started.");
-        }
     }
 
-    void Window::onAccept() {
-        SendMessageW(window_, WM_CLOSE, 0, 0);
+    void Window::showStartFailed() {
+        setControlsEnabled(true);
+        showError(L"The copy could not be started.");
     }
 
-    void Window::onClose() {
-        if (workerThread_ != nullptr) {
-            // The window is destroyed when the copy thread confirms it has stopped.
-            cancelRequested_.store(true);
-            closePending_ = true;
-            setStatus(L"Cancelling...");
-            return;
-        }
-
-        DestroyWindow(window_);
+    void Window::showCancelling() {
+        setStatus(L"Cancelling...");
     }
 
-    // Runs on the main thread while the copy thread waits for the answer.
-    LRESULT Window::onRenameRequest(std::size_t entryIndex) {
-        if (closePending_) {
-            return FALSE;
-        }
-
-        decision_.reset(new Decision(instance_, copier_, entryIndex));
-        const bool renamed = decision_->show(window_);
-        decision_.reset();
-
-        return renamed ? TRUE : FALSE;
-    }
-
-    void Window::onCopyFinished(std::size_t failed, std::size_t skipped) {
-        if (!restoreAfterWorker()) {
-            return;
-        }
+    void Window::showCopyFinished(std::size_t failed, std::size_t skipped) {
+        restoreControls();
         setStatus(L"Finished.");
 
         std::wstring text = L"The copy has finished.";
@@ -425,43 +389,23 @@ namespace fullcopy {
 
         const UINT icon = (failed > 0 || skipped > 0) ? MB_ICONWARNING : MB_ICONINFORMATION;
         MessageBoxW(window_, text.c_str(), L"FullCopy", MB_OK | icon);
-        }
+    }
 
-    void Window::onCopyFailed() {
-        if (!restoreAfterWorker()) {
-            return;
-        }
+    void Window::showCopyFailed() {
+        restoreControls();
         setStatus(L"The copy could not be done.");
         showError(L"The copy could not be completed. "
                   L"Some destination files or directories may already have been created.");
-    }   
-
-    // Shows the full source path of the entry the copy thread is working on.
-    void Window::onCurrentEntry(std::size_t entryIndex) {
-        if (entryIndex >= copier_.getEntryCount()) {
-            return;
-        }
-
-        setCurrentPath(joinPath(copier_.getSourceRoot(), copier_.getEntry(entryIndex).sourcePath));
     }
 
-    bool Window::restoreAfterWorker() {
-        finishWorker();
-        if (closePending_) {
-            DestroyWindow(window_);
-            return false;
-        }
+    void Window::onAccept() {
+        SendMessageW(window_, WM_CLOSE, 0, 0);
+    }
+
+    // Leaves the window ready for a new copy.
+    void Window::restoreControls() {
         setControlsEnabled(true);
         setCurrentPath(L"");
-        return true;
-    }
-
-    void Window::finishWorker() {
-        if (workerThread_ != nullptr) {
-            WaitForSingleObject(workerThread_, INFINITE);
-            CloseHandle(workerThread_);
-            workerThread_ = nullptr;
-        }
     }
 
     void Window::setControlsEnabled(bool enabled) {
@@ -476,71 +420,10 @@ namespace fullcopy {
 
     void Window::setStatus(const std::wstring &text) {
         SetWindowTextW(statusLabel_, text.c_str());
-    }   
-
-    void Window::setCurrentPath(const std::wstring &path) {
-        SetWindowTextW(pathLabel_, path.c_str());
     }
 
     void Window::showError(const std::wstring &text) {
         MessageBoxW(window_, text.c_str(), L"FullCopy", MB_OK | MB_ICONERROR);
-    }      
-
-    DWORD WINAPI Window::copyThread(LPVOID parameter) {
-        auto *self = static_cast<Window*>(parameter);
-        try {
-            self->runCopy();
-            return 0;
-        } catch (...) {
-            PostMessageW(self->window_, WM_APP_COPY_FAILED, 0, 0);
-            return 1;
-        }
-    }
-
-    void Window::runCopy() {
-        if (!copier_.load(&cancelRequested_)) {
-            PostMessageW(window_, WM_APP_COPY_FAILED, 0, 0);
-            return;
-        }
-
-        const std::size_t count = copier_.getEntryCount();
-        std::size_t failed = 0;
-        std::size_t skipped = 0;
-        int lastPercentage = -1;
-
-        for (std::size_t i = 0; i < count && !cancelRequested_.load(); ++i) {
-            PostMessageW(window_, WM_APP_CURRENT_ENTRY, static_cast<WPARAM>(i), 0);
-
-            // Ask for a new name until the path fits. SendMessage blocks this
-            // thread until the user answers in the Decision window.
-            while (!copier_.check(i)) {
-                if (copier_.getMaxNameLength(i) == 0 || cancelRequested_.load() || SendMessageW(window_, WM_APP_RENAME_REQUEST, static_cast<WPARAM>(i), 0) == FALSE) {
-                    copier_.skip(i);
-                    ++skipped;
-                    break;
-                }
-            }
-
-            if (cancelRequested_.load()) {
-                break;
-            }
-
-            if (!copier_.copy(i, &cancelRequested_)) {
-                ++failed;
-            }
-
-            const int percentage = static_cast<int>((i + 1) * 100 / count);
-            if (percentage != lastPercentage) {
-                PostMessageW(window_, WM_APP_PROGRESS, static_cast<WPARAM>(percentage), 0);
-                lastPercentage = percentage;
-            }
-        }
-
-        if (count == 0) {
-            PostMessageW(window_, WM_APP_PROGRESS, 100, 0);
-        }
-
-        PostMessageW(window_, WM_APP_COPY_FINISHED, static_cast<WPARAM>(failed), static_cast<LPARAM>(skipped));
     }
 
 } // namespace fullcopy

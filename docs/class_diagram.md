@@ -6,8 +6,33 @@ Class diagram of the current code (`include/` and `src/`). Everything lives in t
 classDiagram
     direction TB
 
+    class Controller {
+        -Copier copier_
+        -Window window_
+        -HANDLE workerThread_
+        -atomic_bool cancelRequested_
+        -bool closePending_
+        +Controller(HINSTANCE instance)
+        +~Controller()
+        +create(int showCommand) bool
+        +run() int
+        +onStart() void
+        +onClose() void
+        +onProgress(int percentage) void
+        +onRenameRequest(size_t entryIndex) bool
+        +onCurrentEntry(size_t entryIndex) void
+        +onCopyFinished(size_t failed, size_t skipped) void
+        +onCopyFailed() void
+        +rename(size_t entryIndex, wstring newName) RenameResult
+        -copyThread(LPVOID parameter)$ DWORD
+        -runCopy() void
+        -finishCopy() bool
+        -finishWorker() void
+    }
+
     class Window {
         -HINSTANCE instance_
+        -Controller& controller_
         -HWND window_
         -int loadPercentage_
         -HWND sourceDirectory_
@@ -19,48 +44,45 @@ classDiagram
         -HWND progressBar_
         -HWND pathLabel_
         -HWND statusLabel_
-        -Copier copier_
         -unique_ptr~Decision~ decision_
-        -HANDLE workerThread_
-        -atomic_bool cancelRequested_
-        -bool closePending_
-        +Window(HINSTANCE instance)
-        +~Window()
+        +Window(HINSTANCE instance, Controller& controller)
         +create(int showCommand) bool
         +run() int
+        +close() void
+        +getHandle() HWND
+        +getSourceDirectory() wstring
+        +getDestinationDirectory() wstring
+        +askNewName(RenameRequest request) bool
         +updateProgressBar(int percentage) void
+        +setCurrentPath(wstring path) void
+        +showDirectoryError(DirectoryResult result) void
+        +showCopyStarted() void
+        +showStartFailed() void
+        +showCancelling() void
+        +showCopyFinished(size_t failed, size_t skipped) void
+        +showCopyFailed() void
         -windowProcedure(HWND, UINT, WPARAM, LPARAM)$ LRESULT
         -handleMessage(UINT, WPARAM, LPARAM) LRESULT
         -createControls() void
         -onBrowse(HWND targetEdit) void
-        -onStart() void
         -onAccept() void
-        -onClose() void
-        -onRenameRequest(size_t entryIndex) LRESULT
-        -onCopyFinished(size_t failed, size_t skipped) void
-        -onCopyFailed() void
-        -onCurrentEntry(size_t entryIndex) void
-        -restoreAfterWorker() bool
-        -finishWorker() void
+        -restoreControls() void
         -setControlsEnabled(bool enabled) void
         -setStatus(wstring text) void
-        -setCurrentPath(wstring path) void
         -showError(wstring text) void
-        -copyThread(LPVOID parameter)$ DWORD
-        -runCopy() void
     }
 
     class Decision {
         -HINSTANCE instance_
-        -Copier& copier_
-        -size_t entryIndex_
+        -Controller& controller_
+        -RenameRequest request_
         -HWND parent_
         -HWND window_
         -HWND textBox_
         -HWND acceptButton_
         -bool renamed_
         -bool running_
-        +Decision(HINSTANCE instance, Copier& copier, size_t entryIndex)
+        +Decision(HINSTANCE instance, Controller& controller, RenameRequest request)
         +~Decision()
         +show(HWND parent) bool
         +selfDestroy() void
@@ -69,6 +91,15 @@ classDiagram
         -handleMessage(UINT, WPARAM, LPARAM) LRESULT
         -createControls() void
         -onAccept() void
+    }
+
+    class RenameRequest {
+        <<struct>>
+        +size_t entryIndex
+        +bool isDirectory
+        +wstring currentName
+        +size_t pathLength
+        +size_t maxNameLength
     }
 
     class Copier {
@@ -82,6 +113,7 @@ classDiagram
         -vector~CopyEntry~ entries_
         +Copier()
         +setDirectories(wstring sourceRoot, wstring destinationRoot) void
+        +checkDirectories() DirectoryResult
         +load(atomic_bool* cancellation = nullptr) bool
         +check(size_t index) bool
         +copy(size_t index, atomic_bool* cancellation = nullptr) bool
@@ -122,6 +154,15 @@ classDiagram
         DestinationUnavailable
     }
 
+    class DirectoryResult {
+        <<enumeration>>
+        Ok
+        Empty
+        SourceNotFound
+        SameDirectory
+        DestinationInsideSource
+    }
+
     class Common {
         <<utility>>
         +ControlId enum
@@ -129,6 +170,7 @@ classDiagram
         +WM_APP_RENAME_REQUEST$ UINT
         +WM_APP_COPY_FINISHED$ UINT
         +WM_APP_COPY_FAILED$ UINT
+        +WM_APP_CURRENT_ENTRY$ UINT
         +equalsIgnoreCase(wstring first, wstring second) bool
         +joinPath(wstring base, wstring part) wstring
         +dispatchWindowMessage~Owner~(HWND, UINT, WPARAM, LPARAM, windowMember, handler) LRESULT
@@ -137,14 +179,21 @@ classDiagram
         +getWindowString(HWND window) wstring
     }
 
-    Window "1" *-- "1" Copier : composed of
+    Controller "1" *-- "1" Copier : model
+    Controller "1" *-- "1" Window : view
+    Window ..> Controller : passes user actions
     Window "1" *-- "0..1" Decision : composed of
-    Decision ..> Copier : uses rename()
+    Decision ..> Controller : calls rename()
+    Decision ..> RenameRequest : shows
+    Controller ..> RenameRequest : creates
     Copier "1" *-- "*" CopyEntry : entries_
     Copier ..> RenameResult : returns
+    Copier ..> DirectoryResult : returns
     Decision ..> RenameResult : reads
+    Window ..> DirectoryResult : reads
     Window ..> Common : uses
     Decision ..> Common : uses
+    Controller ..> Common : uses
     Copier ..> Common : uses
 
     note for Decision "Appears only when Copier::check() returns false (sizeApproved_ == false)"
@@ -152,10 +201,20 @@ classDiagram
 
 ## Notes
 
-- **Window** owns one `Copier` and creates one `Decision` only while a name is too long (`unique_ptr`, 0..1).
-- **Decision** keeps a reference to the `Copier` and calls `rename()` when the user presses *Accept*, then calls `selfDestroy()`.
+The code follows the Model-View-Controller pattern:
+
+| Layer | Classes | Job |
+|---|---|---|
+| Model | `Copier`, `CopyEntry`, `RenameResult`, `DirectoryResult` | File system rules and data: directory checks, scanning, path limits, renames and copies. It does not know about windows. |
+| View | `Window`, `Decision`, `RenameRequest` | Controls, user-visible texts and messages. They pass every user action to the `Controller` and never call the `Copier`. |
+| Controller | `Controller` | Reads the input from the `Window`, calls the `Copier`, runs the copy thread, handles cancellation and tells the views what to show. |
+
+- **Controller** owns the `Copier` and the `Window`. `main.cpp` creates only the `Controller`.
+- **Window** creates one `Decision` only while a name is too long (`unique_ptr`, 0..1).
+- **Decision** receives a `RenameRequest` with the data to show, and calls `Controller::rename()` when the user presses *Accept*, then calls `selfDestroy()`.
 - **Copier** stores the scanned files and directories as `CopyEntry` items, in pre-order (a directory always comes before its content).
+- `Copier::checkDirectories()` rejects empty directories, a missing source, and a destination equal to or inside the source before the copy starts.
 - A failed or cancelled scan discards partial entries and stops the operation before files are copied. Existing destination paths must be directories, and existing files are never overwritten.
-- `Window` shares an atomic cancellation flag with `Copier`. Scanning checks it between entries, and `CopyFileExW` checks it through its progress callback.
+- `Controller` shares an atomic cancellation flag with `Copier`. Scanning checks it between entries, and `CopyFileExW` checks it through its progress callback.
 - **Common** is not a class: it groups the control IDs, the messages between the copy thread and the main window, and the UI helper functions (`include/Common.hpp`).
-- The copy runs on a separate thread (`Window::runCopy`). It asks for a new name with `SendMessage(WM_APP_RENAME_REQUEST)`, so it waits while the `Decision` window is open.
+- The copy runs on a separate thread (`Controller::runCopy`). It sends the `WM_APP_*` messages to the `Window`, which passes them to the `Controller` on the main thread. It asks for a new name with `SendMessage(WM_APP_RENAME_REQUEST)`, so it waits while the `Decision` window is open.

@@ -3,20 +3,21 @@
 
 #include <windows.h>
 
-#include <atomic>
 #include <cstddef>
 #include <memory>
 #include <string>
 
-#include "Copier.hpp"
 #include "Decision.hpp"
 
 namespace fullcopy {
-    // Main window. It is composed of one Copier and, only while a name is too long, one Decision.
+    class Controller;
+    enum class DirectoryResult;
+
+    // Main window (view). It shows what the Controller asks for and passes every user action
+    // to it. It is composed of one Decision only while a name is too long.
     class Window {
     public:
-        explicit Window(HINSTANCE instance);
-        ~Window();
+        Window(HINSTANCE instance, Controller &controller);
 
         Window(const Window&) = delete;
         Window &operator=(const Window&) = delete;
@@ -26,7 +27,29 @@ namespace fullcopy {
         // Runs the message loop until the window is closed. Returns the exit code.
         int run();
 
+        // Destroys the window, which ends the message loop.
+        void close();
+
+        // Window that receives the messages of the copy thread.
+        HWND getHandle() const;
+
+        // Text written by the user in the directory boxes.
+        std::wstring getSourceDirectory() const;
+        std::wstring getDestinationDirectory() const;
+
+        // Opens the Decision window and waits for it. Returns true if the entry was renamed.
+        bool askNewName(const RenameRequest &request);
+
         void updateProgressBar(int percentage);
+        void setCurrentPath(const std::wstring &path);
+
+        // States of the copy.
+        void showDirectoryError(DirectoryResult result);
+        void showCopyStarted();
+        void showStartFailed();
+        void showCancelling();
+        void showCopyFinished(std::size_t failed, std::size_t skipped);
+        void showCopyFailed();
 
     private:
         static const wchar_t *CLASS_NAME;
@@ -36,25 +59,14 @@ namespace fullcopy {
 
         void createControls();
         void onBrowse(HWND targetEdit);
-        void onStart();
         void onAccept();
-        void onClose();
-        LRESULT onRenameRequest(std::size_t entryIndex);
-        void onCopyFinished(std::size_t failed, std::size_t skipped);
-        void onCopyFailed();
-        void onCurrentEntry(std::size_t entryIndex);
-        bool restoreAfterWorker();
-        void finishWorker();
+        void restoreControls();
         void setControlsEnabled(bool enabled);
         void setStatus(const std::wstring &text);
-        void setCurrentPath(const std::wstring &path);
         void showError(const std::wstring &text);
 
-        // Copy thread: walks every entry, asks for a new name when needed and copies it.
-        static DWORD WINAPI copyThread(LPVOID parameter);
-        void runCopy();
-
         HINSTANCE instance_;
+        Controller &controller_;
         HWND window_;
 
         int loadPercentage_;
@@ -68,12 +80,7 @@ namespace fullcopy {
         HWND pathLabel_; // Path being copied, under the progress bar.
         HWND statusLabel_;
 
-        Copier copier_;
         std::unique_ptr<Decision> decision_;
-
-        HANDLE workerThread_;
-        std::atomic_bool cancelRequested_;
-        bool closePending_;
     };
 } // namespace fullcopy
 

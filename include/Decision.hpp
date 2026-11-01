@@ -4,15 +4,25 @@
 #include <windows.h>
 
 #include <cstddef>
+#include <string>
 
 namespace fullcopy {
-    class Copier;
+    class Controller;
+
+    // Data of the entry whose name is too long, prepared by the Controller for the Decision window.
+    struct RenameRequest {
+        std::size_t entryIndex;
+        bool isDirectory;
+        std::wstring currentName;
+        std::size_t pathLength;    // Length of the full destination path.
+        std::size_t maxNameLength; // Longest name that fits.
+    };
 
     // Window that appears only when the Copier does not approve the size of a path.
-    // It asks the user for a new name and applies it with Copier::rename().
+    // It asks the user for a new name and passes it to Controller::rename().
     class Decision {
     public:
-        Decision(HINSTANCE instance, Copier &copier, std::size_t entryIndex);
+        Decision(HINSTANCE instance, Controller &controller, const RenameRequest &request);
         ~Decision();
 
         Decision(const Decision&) = delete;
@@ -36,8 +46,8 @@ namespace fullcopy {
         void onAccept();
 
         HINSTANCE instance_;
-        Copier &copier_;
-        std::size_t entryIndex_;
+        Controller &controller_;
+        RenameRequest request_;
         HWND parent_;
         HWND window_;
         HWND textBox_;

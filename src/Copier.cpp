@@ -68,6 +68,10 @@ namespace fullcopy {
             return false;
         }
 
+        bool startsWithIgnoreCase(const std::wstring &text, const std::wstring &prefix) {
+            return text.size() >= prefix.size() && equalsIgnoreCase(text.substr(0, prefix.size()), prefix);
+        }
+
     } // namespace
 
     Copier::Copier()
@@ -79,6 +83,27 @@ namespace fullcopy {
         sourceRoot_ = normalizePath(sourceRoot);
         destinationRoot_ = normalizePath(destinationRoot);
         entries_.clear();
+    }
+
+    DirectoryResult Copier::checkDirectories() const {
+        if (sourceRoot_.empty() || destinationRoot_.empty()) {
+            return DirectoryResult::Empty;
+        }
+
+        if (!isDirectory(sourceRoot_)) {
+            return DirectoryResult::SourceNotFound;
+        }
+
+        if (equalsIgnoreCase(sourceRoot_, destinationRoot_)) {
+            return DirectoryResult::SameDirectory;
+        }
+
+        const std::wstring sourcePrefix = sourceRoot_.back() == L'\\' ? sourceRoot_ : sourceRoot_ + L'\\';
+        if (startsWithIgnoreCase(destinationRoot_, sourcePrefix)) {
+            return DirectoryResult::DestinationInsideSource;
+        }
+
+        return DirectoryResult::Ok;
     }
 
     bool Copier::load(std::atomic_bool *cancellation) {
@@ -335,7 +360,12 @@ namespace fullcopy {
     }
 
     // Returns the absolute path without the trailing backslash (except for drive roots like "C:\").
+    // An empty path stays empty, so checkDirectories() can report it.
     std::wstring Copier::normalizePath(const std::wstring &path) {
+        if (path.empty()) {
+            return path;
+        }
+
         std::wstring result = path;
 
         const DWORD length = GetFullPathNameW(path.c_str(), 0, nullptr, nullptr);

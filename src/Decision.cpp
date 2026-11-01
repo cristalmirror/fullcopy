@@ -3,7 +3,7 @@
 #include <string>
 
 #include "Common.hpp"
-#include "Copier.hpp"
+#include "Controller.hpp"
 
 namespace fullcopy {
 
@@ -16,10 +16,10 @@ namespace fullcopy {
 
     } // namespace
 
-    Decision::Decision(HINSTANCE instance, Copier &copier, std::size_t entryIndex)
+    Decision::Decision(HINSTANCE instance, Controller &controller, const RenameRequest &request)
     : instance_(instance),
-      copier_(copier),
-      entryIndex_(entryIndex),
+      controller_(controller),
+      request_(request),
       parent_(nullptr),
       window_(nullptr),
       textBox_(nullptr),
@@ -147,17 +147,13 @@ namespace fullcopy {
     }
 
     void Decision::createControls() {
-        const CopyEntry &entry = copier_.getEntry(entryIndex_);
-        const std::wstring currentName = copier_.getDestinationName(entryIndex_);
-        const std::size_t maxLength = copier_.getMaxNameLength(entryIndex_);
-
-        const std::wstring text = std::wstring(entry.isDirectory ? L"This directory name" : L"This file name")
+        const std::wstring text = std::wstring(request_.isDirectory ? L"This directory name" : L"This file name")
                                     + L" is too long to be copied (" 
-                                    + std::to_wstring(copier_.getTempSize())
+                                    + std::to_wstring(request_.pathLength)
                                     + L" characters in the full path):\r\n\r\n" 
-                                    + currentName
+                                    + request_.currentName
                                     + L"\r\n\r\nWrite a new name (" 
-                                    + std::to_wstring(maxLength) 
+                                    + std::to_wstring(request_.maxNameLength) 
                                     + L" characters maximum):";
 
     CreateWindowExW(0,
@@ -175,7 +171,7 @@ namespace fullcopy {
 
     textBox_ = CreateWindowExW( WS_EX_CLIENTEDGE,
                                 L"EDIT",
-                                currentName.c_str(),
+                                request_.currentName.c_str(),
                                 WS_CHILD | WS_VISIBLE | WS_TABSTOP | ES_AUTOHSCROLL,
                                 12,
                                 130,
@@ -206,7 +202,7 @@ namespace fullcopy {
         const std::wstring newName = getWindowString(textBox_);
         std::wstring error;
 
-        switch (copier_.rename(entryIndex_, newName)) {
+        switch (controller_.rename(request_.entryIndex, newName)) {
             case RenameResult::Ok:
                 renamed_ = true;
                 selfDestroy();
@@ -223,7 +219,7 @@ namespace fullcopy {
             break;
 
             case RenameResult::TooLong:
-                error = L"The name is still too long. Use " + std::to_wstring(copier_.getMaxNameLength(entryIndex_))
+                error = L"The name is still too long. Use " + std::to_wstring(request_.maxNameLength)
                         + L" characters or less (it has " + std::to_wstring(newName.size()) + L").";
             break;
 

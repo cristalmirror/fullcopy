@@ -21,7 +21,7 @@ namespace fullcopy {
         ID_DECISION_TEXT_BOX
     };
 
-    // Messages sent by the copy thread to the main window.
+    // Messages sent by the copy thread to the main window, which passes them to the Controller.
     const UINT WM_APP_PROGRESS       = WM_APP + 1; // wParam: percentage (0-100).
     const UINT WM_APP_RENAME_REQUEST = WM_APP + 2; // wParam: entry index. Returns TRUE if renamed.
     const UINT WM_APP_COPY_FINISHED  = WM_APP + 3; // wParam: failed entries, lParam: skipped entries.

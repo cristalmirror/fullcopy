@@ -25,6 +25,16 @@ namespace fullcopy {
         DestinationUnavailable
     };
 
+    // Result of checking the source and destination directories before a copy.
+    enum class DirectoryResult {
+        Ok,
+        Empty,
+        SourceNotFound,
+        SameDirectory,
+        DestinationInsideSource
+    };
+
+    // Model: scans the source directory, checks and renames the entries, and copies them.
     class Copier {
     public:
         // Windows limits (without the "\\?\" prefix):
@@ -38,6 +48,10 @@ namespace fullcopy {
         Copier();
 
         void setDirectories(const std::wstring &sourceRoot, const std::wstring &destinationRoot);
+
+        // Checks the directories given to setDirectories(): both are set, the source exists,
+        // and the destination is neither the source nor inside it.
+        DirectoryResult checkDirectories() const;
 
         // Scans the source directory and all its subdirectories.
         // Returns false on cancellation, any scan error, or an invalid destination.

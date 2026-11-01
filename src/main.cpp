@@ -2,7 +2,7 @@
 #include <commctrl.h>
 #include <objbase.h>
 
-#include "Window.hpp"
+#include "Controller.hpp"
 
 int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int showCommand) {
     INITCOMMONCONTROLSEX commonControls = {};
@@ -15,9 +15,9 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int showCommand) {
 
     int exitCode = 1;
     {
-        fullcopy::Window window(instance);
-        if (window.create(showCommand)) {
-            exitCode = window.run();
+        fullcopy::Controller controller(instance);
+        if (controller.create(showCommand)) {
+            exitCode = controller.run();
         } else {
             MessageBoxW(nullptr, L"The main window could not be created.", L"FullCopy", MB_OK | MB_ICONERROR);
         }
