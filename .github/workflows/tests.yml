@@ -23,6 +23,18 @@ jobs:
         run: |
           make CXX=g++ WINDRES=windres CXXFLAGS='-std=c++17 -O2 -Wall -Wextra -Werror -Iinclude -DUNICODE -D_UNICODE -D_WIN32_WINNT=0x0601 -MMD -MP'
           g++ -std=c++17 -O2 -Wall -Wextra -Werror -DUNICODE -D_UNICODE -D_WIN32_WINNT=0x0601 -Iinclude tests/copier_tests.cpp src/Copier.cpp src/Common.cpp -o bin/copier_tests.exe -static -lshell32 -lole32 -luuid -lgdi32 -luser32
+          make manual-tree CXX=g++ TOOLFLAGS='-std=c++17 -O2 -Wall -Wextra -Werror -DUNICODE -D_UNICODE -D_WIN32_WINNT=0x0601'
+          g++ -std=c++17 -O2 -Wall -Wextra -Werror -DUNICODE -D_UNICODE -D_WIN32_WINNT=0x0601 -Iinclude tests/ui_tests.cpp src/Controller.cpp src/Window.cpp src/Decision.cpp src/Copier.cpp src/Common.cpp -o bin/ui_tests.exe -static -lcomctl32 -lshell32 -lole32 -luuid -lgdi32 -luser32
       - name: Run integration tests
         shell: msys2 {0}
         run: ./bin/copier_tests.exe
+      - name: Run UI tests
+        shell: msys2 {0}
+        timeout-minutes: 5
+        run: ./bin/ui_tests.exe
+      - name: Smoke test the manual test data generator
+        shell: msys2 {0}
+        run: |
+          ./bin/generate_manual_tree.exe manual-tree --directories 3 --files 50 --long-files 10 --seed 1
+          # A second run must refuse the existing directory.
+          if ./bin/generate_manual_tree.exe manual-tree; then exit 1; fi

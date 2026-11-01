@@ -7,6 +7,27 @@ and this project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.0.1] - 2026-11-01
+
+### Changed
+
+- The code follows the Model-View-Controller pattern. A new `Controller` class connects the views
+  (`Window`, `Decision`) with the model (`Copier`) and runs the copy thread. `main.cpp` creates the
+  `Controller`. The behaviour of the program does not change.
+- The checks of the source and destination directories moved from the main window to
+  `Copier::checkDirectories()`, which returns a `DirectoryResult`.
+- `Decision` no longer uses `Copier` directly: it receives a `RenameRequest` and renames through
+  `Controller::rename()`.
+
+### Added
+
+- Comments in English for every function, and step by step inside the long ones.
+- UML activity diagrams in `docs/flow_diagram.md`.
+- Tests for `Copier::checkDirectories()`, and UI tests (`tests/ui_tests.cpp`) that drive the
+  `Controller`, the main window and the **Name too long** window. Both run on the Windows CI job.
+- `generate_manual_tree`, a command line tool (`make manual-tree`) that creates a source tree of
+  10000 files with random long names for the manual checks.
+
 ## [1.0.0] - 2026-10-31
 
 ### Changed

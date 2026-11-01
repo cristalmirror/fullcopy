@@ -3,82 +3,85 @@
 
 #include <windows.h>
 
-#include <atomic>
 #include <cstddef>
 #include <memory>
 #include <string>
 
-#include "Copier.hpp"
 #include "Decision.hpp"
 
-namespace fullcopy
-{
+namespace fullcopy {
+    class Controller;
+    enum class DirectoryResult;
 
-// Main window. It is composed of one Copier and, only while a name is too long, one Decision.
-class Window
-{
-public:
-    explicit Window(HINSTANCE instance);
-    ~Window();
+    // Main window (view). It shows what the Controller asks for and passes every user action
+    // to it. It is composed of one Decision only while a name is too long.
+    class Window {
+    public:
+        Window(HINSTANCE instance, Controller &controller);
 
-    Window(const Window&) = delete;
-    Window& operator=(const Window&) = delete;
+        Window(const Window&) = delete;
+        Window &operator=(const Window&) = delete;
 
-    bool create(int showCommand);
+        bool create(int showCommand);
 
-    // Runs the message loop until the window is closed. Returns the exit code.
-    int run();
+        // Runs the message loop until the window is closed. Returns the exit code.
+        int run();
 
-    void updateProgressBar(int percentage);
+        // Destroys the window, which ends the message loop.
+        void close();
 
-private:
-    static const wchar_t* CLASS_NAME;
+        // Window that receives the messages of the copy thread.
+        HWND getHandle() const;
 
-    static LRESULT CALLBACK windowProcedure(HWND window, UINT message, WPARAM wParam, LPARAM lParam);
-    LRESULT handleMessage(UINT message, WPARAM wParam, LPARAM lParam);
+        // Text written by the user in the directory boxes.
+        std::wstring getSourceDirectory() const;
+        std::wstring getDestinationDirectory() const;
 
-    void createControls();
-    void onBrowse(HWND targetEdit);
-    void onStart();
-    void onAccept();
-    void onClose();
-    LRESULT onRenameRequest(std::size_t entryIndex);
-    void onCopyFinished(std::size_t failed, std::size_t skipped);
-    void onCopyFailed();
-    void onCurrentEntry(std::size_t entryIndex);
-    bool restoreAfterWorker();
-    void finishWorker();
-    void setControlsEnabled(bool enabled);
-    void setStatus(const std::wstring& text);
-    void setCurrentPath(const std::wstring& path);
-    void showError(const std::wstring& text);
+        // Opens the Decision window and waits for it. Returns true if the entry was renamed.
+        bool askNewName(const RenameRequest &request);
 
-    // Copy thread: walks every entry, asks for a new name when needed and copies it.
-    static DWORD WINAPI copyThread(LPVOID parameter);
-    void runCopy();
+        void updateProgressBar(int percentage);
+        void setCurrentPath(const std::wstring &path);
 
-    HINSTANCE instance_;
-    HWND window_;
+        // States of the copy.
+        void showDirectoryError(DirectoryResult result);
+        void showCopyStarted();
+        void showStartFailed();
+        void showCancelling();
+        void showCopyFinished(std::size_t failed, std::size_t skipped);
+        void showCopyFailed();
 
-    int loadPercentage_;
-    HWND sourceDirectory_;
-    HWND destinationDirectory_;
-    HWND acceptButton_;
-    HWND browseButton_;            // Browses the source directory.
-    HWND browseDestinationButton_; // Browses the destination directory.
-    HWND startButton_;
-    HWND progressBar_;
-    HWND pathLabel_; // Path being copied, under the progress bar.
-    HWND statusLabel_;
+    private:
+        static const wchar_t *CLASS_NAME;
 
-    Copier copier_;
-    std::unique_ptr<Decision> decision_;
+        static LRESULT CALLBACK windowProcedure(HWND window, UINT message, WPARAM wParam, LPARAM lParam);
+        LRESULT handleMessage(UINT message, WPARAM wParam, LPARAM lParam);
 
-    HANDLE workerThread_;
-    std::atomic_bool cancelRequested_;
-    bool closePending_;
-};
+        void createControls();
+        void onBrowse(HWND targetEdit);
+        void onAccept();
+        void restoreControls();
+        void setControlsEnabled(bool enabled);
+        void setStatus(const std::wstring &text);
+        void showError(const std::wstring &text);
 
+        HINSTANCE instance_;
+        Controller &controller_;
+        HWND window_;
+
+        int loadPercentage_;
+        HWND sourceDirectory_;
+        HWND destinationDirectory_;
+        HWND acceptButton_;
+        HWND browseButton_;            // Browses the source directory.
+        HWND browseDestinationButton_; // Browses the destination directory.
+        HWND startButton_;
+        HWND progressBar_;
+        HWND pathLabel_; // Path being copied, under the progress bar.
+        HWND statusLabel_;
+
+        std::unique_ptr<Decision> decision_;
+    };
 } // namespace fullcopy
 
 #endif // FULLCOPY_WINDOW_HPP

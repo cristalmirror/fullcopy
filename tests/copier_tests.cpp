@@ -1,5 +1,7 @@
 #include "Copier.hpp"
 #include <windows.h>
+#include <algorithm>
+#include <cwctype>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -8,9 +10,10 @@
 
 namespace fs = std::filesystem;
 using fullcopy::Copier;
+using fullcopy::DirectoryResult;
 using fullcopy::RenameResult;
 
-void require(bool condition, const char* message) {
+void require(bool condition, const char *message) {
     if (!condition) throw std::runtime_error(message);
 }
 
@@ -42,26 +45,38 @@ struct Fixture {
     }
 };
 
-void write(const fs::path& path, const std::string& content) {
+void write(const fs::path &path, const std::string &content) {
     std::ofstream stream(path, std::ios::binary);
     stream.write(content.data(), static_cast<std::streamsize>(content.size()));
     require(static_cast<bool>(stream), "Fixture write failed");
 }
 
-std::string read(const fs::path& path) {
+std::string read(const fs::path &path) {
     std::ifstream stream(path, std::ios::binary);
     require(static_cast<bool>(stream), "Copied file missing");
     return {std::istreambuf_iterator<char>(stream), std::istreambuf_iterator<char>()};
 }
 
-std::size_t find(const Copier& copier, const std::wstring& relative) {
+std::size_t find(const Copier &copier, const std::wstring &relative) {
     for (std::size_t i = 0; i < copier.getEntryCount(); ++i) {
         if (copier.getEntry(i).sourcePath == relative) return i;
     }
     throw std::runtime_error("Expected entry missing");
 }
 
-void copyAll(Copier& copier) {
+std::wstring upper(std::wstring text) {
+    std::transform(text.begin(), text.end(), text.begin(), [](wchar_t character) {
+        return static_cast<wchar_t>(std::towupper(character));
+    });
+    return text;
+}
+
+std::wstring forwardSlashes(std::wstring text) {
+    std::replace(text.begin(), text.end(), L'\\', L'/');
+    return text;
+}
+
+void copyAll(Copier &copier) {
     for (std::size_t i = 0; i < copier.getEntryCount(); ++i) {
         require(copier.check(i), "Unexpected path rejection");
         require(copier.copy(i), "Copy failed");
@@ -102,7 +117,7 @@ void renameAndSkip() {
     require(copier.rename(directory, L"OTHER") == RenameResult::AlreadyExists, "Case collision accepted");
     require(copier.rename(directory, L"renamed") == RenameResult::Ok, "Rename failed");
     require(copier.getEntry(child).destinationPath == L"renamed\\child", "Child path not renamed");
-    for (const auto* name : {L"CON", L"nul.txt", L"bad/name", L"tail.", L"tail ", L".."}) {
+    for (const auto *name : {L"CON", L"nul.txt", L"bad/name", L"tail.", L"tail ", L".."}) {
         require(copier.rename(directory, name) == RenameResult::InvalidName, "Invalid name accepted");
     }
     require(copier.rename(directory, L"") == RenameResult::Empty, "Empty name accepted");
@@ -126,7 +141,7 @@ void boundaries() {
     Copier copier;
     copier.setDirectories(f.source.wstring(), f.destination.wstring());
     require(copier.load(), "Load failed");
-    for (const auto* relative : {L"file", L"folder"}) {
+    for (const auto *relative : {L"file", L"folder"}) {
         const auto index = find(copier, relative);
         const auto maximum = copier.getMaxNameLength(index);
         require(maximum > 0, "Fixture leaves no name space");
@@ -157,19 +172,53 @@ void failuresAndEmptySource() {
     require(!copier.copy(find(copier, L"vanishing")), "Missing file copy reported success");
 }
 
+void directoryChecks() {
+    Fixture f;
+    write(f.root / L"file", "not a directory");
+    Copier copier;
+    const auto check = [&copier](const std::wstring &source, const std::wstring &destination) {
+        copier.setDirectories(source, destination);
+        return copier.checkDirectories();
+    };
+    const std::wstring source = f.source.wstring();
+    const std::wstring destination = f.destination.wstring();
+    require(check(L"", destination) == DirectoryResult::Empty, "Empty source accepted");
+    require(check(source, L"") == DirectoryResult::Empty, "Empty destination accepted");
+    require(check((f.root / L"missing").wstring(), destination) == DirectoryResult::SourceNotFound,
+            "Missing source accepted");
+    require(check((f.root / L"file").wstring(), destination) == DirectoryResult::SourceNotFound,
+            "File accepted as source");
+    require(check(source, source) == DirectoryResult::SameDirectory, "Same directory accepted");
+    require(check(source, upper(source) + L"\\") == DirectoryResult::SameDirectory,
+            "Same directory with other case and a trailing backslash accepted");
+    require(check(forwardSlashes(source), source) == DirectoryResult::SameDirectory,
+            "Same directory with forward slashes accepted");
+    require(check(source, (f.source / L"inner").wstring()) == DirectoryResult::DestinationInsideSource,
+            "Destination inside source accepted");
+    require(check(source, (f.source / L"a" / L"b").wstring()) == DirectoryResult::DestinationInsideSource,
+            "Destination deep inside source accepted");
+    // "source2" starts like "source" but is not inside it.
+    require(check(source, (f.root / L"source2").wstring()) == DirectoryResult::Ok,
+            "Sibling with the same prefix rejected");
+    require(check(source + L"\\", destination) == DirectoryResult::Ok, "Valid directories rejected");
+    require(!fs::exists(f.destination) && !fs::exists(f.source / L"inner") && !fs::exists(f.root / L"source2"),
+            "Checking the directories created one");
+}
+
 int main() {
     unsigned failures = 0;
-    const struct { const char* name; void (*run)(); } tests[] = {
+    const struct { const char *name; void (*run)(); } tests[] = {
         {"binary/Unicode copy and folder release", copyAndRelease},
         {"rename, validation, skip and reload", renameAndSkip},
         {"file and directory path boundaries", boundaries},
-        {"failures and empty source", failuresAndEmptySource}
+        {"failures and empty source", failuresAndEmptySource},
+        {"directory checks before a copy", directoryChecks}
     };
-    for (const auto& test : tests) {
+    for (const auto &test : tests) {
         try {
             test.run();
             std::cout << "PASS: " << test.name << '\n';
-        } catch (const std::exception& error) {
+        } catch (const std::exception &error) {
             ++failures;
             std::cerr << "FAIL: " << test.name << ": " << error.what() << '\n';
         }

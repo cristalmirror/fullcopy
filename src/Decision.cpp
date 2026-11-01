@@ -3,11 +3,11 @@
 #include <string>
 
 #include "Common.hpp"
-#include "Copier.hpp"
+#include "Controller.hpp"
 
 namespace fullcopy {
 
-    const wchar_t* Decision::CLASS_NAME = L"FullCopyDecisionWindow";
+    const wchar_t *Decision::CLASS_NAME = L"FullCopyDecisionWindow";
 
     namespace {
 
@@ -16,10 +16,11 @@ namespace fullcopy {
 
     } // namespace
 
-    Decision::Decision(HINSTANCE instance, Copier& copier, std::size_t entryIndex)
+    // Only stores the data. The window is created by show().
+    Decision::Decision(HINSTANCE instance, Controller &controller, const RenameRequest &request)
     : instance_(instance),
-      copier_(copier),
-      entryIndex_(entryIndex),
+      controller_(controller),
+      request_(request),
       parent_(nullptr),
       window_(nullptr),
       textBox_(nullptr),
@@ -27,12 +28,15 @@ namespace fullcopy {
       renamed_(false),
       running_(false) {}
 
+    // Makes sure the window does not outlive this object.
     Decision::~Decision() {
         if (window_ != nullptr) {
             selfDestroy();
         }
     }
 
+    // Creates the window centered over the parent, disables the parent, and runs its own
+    // message loop until the window is closed. Returns true if the entry was renamed.
     bool Decision::show(HWND parent) {
         parent_ = parent;
         registerClass(instance_);
@@ -40,6 +44,7 @@ namespace fullcopy {
         const DWORD style = WS_POPUP | WS_CAPTION | WS_SYSMENU;
         const DWORD extendedStyle = WS_EX_DLGMODALFRAME;
 
+        // Outer size of the window that gives the wanted client area.
         RECT rect = { 0, 0, CLIENT_WIDTH, CLIENT_HEIGHT };
         AdjustWindowRectEx(&rect, style, FALSE, extendedStyle);
         const int width = rect.right - rect.left;
@@ -51,12 +56,15 @@ namespace fullcopy {
         const int x = parentRect.left + ((parentRect.right - parentRect.left) - width) / 2;
         const int y = parentRect.top + ((parentRect.bottom - parentRect.top) - height) / 2;
 
+        // Passing this object lets windowProcedure find it (window_ is set during WM_NCCREATE).
         window_ = CreateWindowExW(extendedStyle, CLASS_NAME, L"Name too long", style,
                               x, y, width, height, parent_, nullptr, instance_, this);
         if (window_ == nullptr) {
             return false;
         }
 
+        // Disable the parent so it can not be used while this window is open (modal), and select
+        // the current name so the user can type over it.
         createControls();
         ShowWindow(window_, SW_SHOW);
         EnableWindow(parent_, FALSE);
@@ -73,22 +81,26 @@ namespace fullcopy {
                 PostQuitMessage(static_cast<int>(message.wParam));
                 break;
             }
+            // GetMessageW failed.
             if (result == -1) {
                 break;
             }
 
+            // IsDialogMessageW handles Tab, Enter and Escape like in a dialog box.
             if (!IsDialogMessageW(window_, &message)) {
                 TranslateMessage(&message);
                 DispatchMessageW(&message);
             }
         }
 
+        // The loop can also end without destroying the window (WM_QUIT or an error).
         if (window_ != nullptr) {
             selfDestroy();
         }
         return renamed_;
     }
 
+    // Ends the modal loop, gives the control back to the parent window and destroys this one.
     void Decision::selfDestroy() {
         running_ = false;
 
@@ -107,6 +119,7 @@ namespace fullcopy {
         }
     }
 
+    // Registers the window class of the Decision window.
     void Decision::registerClass(HINSTANCE instance) {
         WNDCLASSEXW windowClass = {};
         windowClass.cbSize = sizeof(windowClass);
@@ -120,11 +133,15 @@ namespace fullcopy {
         RegisterClassExW(&windowClass);
     }
 
+    // Window procedure of the class: finds the Decision object of the window and passes it
+    // the message.
     LRESULT CALLBACK Decision::windowProcedure(HWND window, UINT message, WPARAM wParam, LPARAM lParam) {
         return dispatchWindowMessage(window, message, wParam, lParam,
                                      &Decision::window_, &Decision::handleMessage);
     }
 
+    // Handles the messages of the window: Accept or Enter applies the name, and Escape or
+    // the X button closes the window, so the entry is skipped.
     LRESULT Decision::handleMessage(UINT message, WPARAM wParam, LPARAM lParam) {
         switch (message) {
             case WM_COMMAND:
@@ -146,20 +163,19 @@ namespace fullcopy {
         return DefWindowProcW(window_, message, wParam, lParam);
     }
 
+    // Creates the explanation, the text box with the current name and the Accept button.
     void Decision::createControls() {
-        const CopyEntry &entry = copier_.getEntry(entryIndex_);
-        const std::wstring currentName = copier_.getDestinationName(entryIndex_);
-        const std::size_t maxLength = copier_.getMaxNameLength(entryIndex_);
-
-        const std::wstring text = std::wstring(entry.isDirectory ? L"This directory name" : L"This file name")
+        // Explain which name is too long and how long the new one can be.
+        const std::wstring text = std::wstring(request_.isDirectory ? L"This directory name" : L"This file name")
                                     + L" is too long to be copied (" 
-                                    + std::to_wstring(copier_.getTempSize())
+                                    + std::to_wstring(request_.pathLength)
                                     + L" characters in the full path):\r\n\r\n" 
-                                    + currentName
+                                    + request_.currentName
                                     + L"\r\n\r\nWrite a new name (" 
-                                    + std::to_wstring(maxLength) 
+                                    + std::to_wstring(request_.maxNameLength) 
                                     + L" characters maximum):";
 
+    // Explanation text.
     CreateWindowExW(0,
                     L"STATIC",
                     text.c_str(),
@@ -173,9 +189,10 @@ namespace fullcopy {
                     instance_,
                     nullptr);
 
+    // Text box, filled with the current name.
     textBox_ = CreateWindowExW( WS_EX_CLIENTEDGE,
                                 L"EDIT",
-                                currentName.c_str(),
+                                request_.currentName.c_str(),
                                 WS_CHILD | WS_VISIBLE | WS_TABSTOP | ES_AUTOHSCROLL,
                                 12,
                                 130,
@@ -186,6 +203,7 @@ namespace fullcopy {
                                 instance_, 
                                 nullptr);
 
+    // Accept button. Its IDOK id also lets the Enter key press it.
     acceptButton_ = CreateWindowExW(0, 
                                     L"BUTTON",
                                     L"Accept",
@@ -202,11 +220,14 @@ namespace fullcopy {
         applyUiFont(window_);
     }
 
+    // Accept button: asks the Controller to rename the entry. On success the window closes;
+    // otherwise it explains the error and lets the user try again.
     void Decision::onAccept() {
         const std::wstring newName = getWindowString(textBox_);
         std::wstring error;
 
-        switch (copier_.rename(entryIndex_, newName)) {
+        // Turn each result into a message for the user.
+        switch (controller_.rename(request_.entryIndex, newName)) {
             case RenameResult::Ok:
                 renamed_ = true;
                 selfDestroy();
@@ -223,7 +244,7 @@ namespace fullcopy {
             break;
 
             case RenameResult::TooLong:
-                error = L"The name is still too long. Use " + std::to_wstring(copier_.getMaxNameLength(entryIndex_))
+                error = L"The name is still too long. Use " + std::to_wstring(request_.maxNameLength)
                         + L" characters or less (it has " + std::to_wstring(newName.size()) + L").";
             break;
 
@@ -237,6 +258,7 @@ namespace fullcopy {
                 break;
         }
 
+        // Show the error and select the text, so the user can correct it.
         MessageBoxW(window_, error.c_str(), L"Invalid name", MB_OK | MB_ICONWARNING);
         SetFocus(textBox_);
         SendMessageW(textBox_, EM_SETSEL, 0, -1);

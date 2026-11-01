@@ -1,0 +1,63 @@
+#ifndef FULLCOPY_CONTROLLER_HPP
+#define FULLCOPY_CONTROLLER_HPP
+
+#include <windows.h>
+
+#include <atomic>
+#include <cstddef>
+#include <string>
+
+#include "Copier.hpp"
+#include "Window.hpp"
+
+namespace fullcopy {
+    // Controller: receives the user actions from the views (Window and Decision), runs the copy
+    // with the Copier on a separate thread, and tells the Window what to show.
+    class Controller {
+    public:
+        explicit Controller(HINSTANCE instance);
+        ~Controller();
+
+        Controller(const Controller&) = delete;
+        Controller &operator=(const Controller&) = delete;
+
+        // Creates and shows the main window.
+        bool create(int showCommand);
+
+        // Runs the application until the main window is closed. Returns the exit code.
+        int run();
+
+        // Actions from the Window (main thread).
+        void onStart();
+        void onClose();
+
+        // Messages from the copy thread, delivered by the Window on the main thread.
+        void onProgress(int percentage);
+        bool onRenameRequest(std::size_t entryIndex);
+        void onCurrentEntry(std::size_t entryIndex);
+        void onCopyFinished(std::size_t failed, std::size_t skipped);
+        void onCopyFailed();
+
+        // Action from the Decision window (main thread, while the copy thread waits).
+        RenameResult rename(std::size_t entryIndex, const std::wstring &newName);
+
+    private:
+        // Copy thread: walks every entry, asks for a new name when needed and copies it.
+        static DWORD WINAPI copyThread(LPVOID parameter);
+        void runCopy();
+
+        // Waits for the copy thread to end. Returns false if the window was closed instead,
+        // because the user asked to close it during the copy.
+        bool finishCopy();
+        void finishWorker();
+
+        Copier copier_;
+        Window window_;
+
+        HANDLE workerThread_;
+        std::atomic_bool cancelRequested_;
+        bool closePending_;
+    };
+} // namespace fullcopy
+
+#endif // FULLCOPY_CONTROLLER_HPP

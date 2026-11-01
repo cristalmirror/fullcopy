@@ -1,6 +1,6 @@
 # FullCopy
 
-**Version 1.0.0**
+**Version 1.0.1**
 
 FullCopy is a Windows desktop application that copies a directory with all its subdirectories and files.
 When a file or directory name is too long to be copied (the destination path goes over the Windows
@@ -10,7 +10,7 @@ Written in C++17 with the Win32 API. It is cross-compiled from Linux with MinGW-
 
 ## Usage
 
-1. Run `fullcopy-1.0.0.exe` on Windows (no installation or extra DLLs needed).
+1. Run `fullcopy-1.0.1.exe` on Windows (no installation or extra DLLs needed).
 2. Choose the **Source directory** and the **Destination directory**, typing the paths or with the
    **Browse...** buttons.
 3. Press **Start**. The progress bar shows how much of the copy is done.
@@ -54,7 +54,7 @@ make docker
 ```
 
 This builds the `fullcopy-builder` image (latest Fedora with the MinGW-w64 compiler) and compiles the
-project inside it. The result is `bin/fullcopy-1.0.0.exe`.
+project inside it. The result is `bin/fullcopy-1.0.1.exe`.
 
 The version is defined by the `VERSION` variable at the top of the `Makefile`.
 
@@ -76,25 +76,63 @@ make
 
 | Command | Description |
 |---|---|
-| `make debug` | Builds `bin/debug/fullcopy-1.0.0.exe` with debug symbols, assertions and stack protection. |
+| `make debug` | Builds `bin/debug/fullcopy-1.0.1.exe` with debug symbols, assertions and stack protection. |
 | `make docker-debug` | Builds the debug executable inside Docker. |
+| `make manual-tree` | Builds `bin/generate_manual_tree.exe`, which creates the data for the manual tests ([docs/testing.md](docs/testing.md)). |
+| `make docker-manual-tree` | Builds that tool inside Docker. |
 | `make clean` | Removes the `build/` and `bin/` directories. |
 | `make clean && make docker` | Builds everything from scratch. |
 
 `make: Nothing to be done for 'all'.` means the executable is already up to date.
+
+## Testing
+
+The Windows CI job (`.github/workflows/tests.yml`) builds everything with warnings treated as
+errors and runs the integration tests of `Copier` and the UI tests of the windows. To run them in a
+Windows MSYS2 shell, follow [docs/testing.md](docs/testing.md).
+
+For the manual checks, build the test data tool and run it on Windows with a new directory:
+
+```sh
+make docker-manual-tree
+```
+
+```bat
+generate_manual_tree.exe C:\fullcopy-source
+```
+
+It creates 10 directories with 1000 files each, where some names are long enough to open the
+**Name too long** window. [docs/testing.md](docs/testing.md) lists the manual checks and its options.
 
 ## Project structure
 
 ```
 include/      Class definitions (.hpp)
 src/          Class implementations (.cpp) and main.cpp
+tests/        Integration and UI tests, and a generator of manual test data
 resources/    Windows manifest (modern look for the controls)
-docs/         Class diagrams
+docs/         Class diagram, flow diagrams and test plan
 Dockerfile    Build environment (Fedora + MinGW-w64)
 Makefile      Build rules
 ```
 
-The class design is described in [docs/class_diagram.md](docs/class_diagram.md).
+## Architecture
+
+The code follows the Model-View-Controller (MVC) pattern:
+
+| Layer | Files | Job |
+|---|---|---|
+| Model | `Copier.hpp`, `Copier.cpp` | Checks the directories, scans the source, checks the path lengths, renames and copies. It does not know about windows. |
+| View | `Window.hpp`, `Window.cpp`, `Decision.hpp`, `Decision.cpp` | Controls, texts and messages for the user. Every user action goes to the `Controller`; the views never call the `Copier`. |
+| Controller | `Controller.hpp`, `Controller.cpp` | Reads the input from the views, uses the `Copier` on a separate copy thread, handles cancellation and tells the views what to show. |
+
+`main.cpp` creates only the `Controller`, which creates the `Copier` and the main `Window`.
+`Common.hpp` and `Common.cpp` hold the control IDs, the messages between the copy thread and the main
+window, and helper functions shared by every class.
+
+- [docs/class_diagram.md](docs/class_diagram.md): the classes and how they relate.
+- [docs/flow_diagram.md](docs/flow_diagram.md): UML activity diagrams of a copy, a rename and closing the program.
+- [docs/testing.md](docs/testing.md): automated tests and manual checks.
 
 ## Changelog
 
