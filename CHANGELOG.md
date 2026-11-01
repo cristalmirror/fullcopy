@@ -7,6 +7,8 @@ and this project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.0.1] - 2026-11-01
+
 ### Changed
 
 - The code follows the Model-View-Controller pattern. A new `Controller` class connects the views
