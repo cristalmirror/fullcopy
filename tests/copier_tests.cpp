@@ -1,5 +1,7 @@
 #include "Copier.hpp"
 #include <windows.h>
+#include <algorithm>
+#include <cwctype>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -8,6 +10,7 @@
 
 namespace fs = std::filesystem;
 using fullcopy::Copier;
+using fullcopy::DirectoryResult;
 using fullcopy::RenameResult;
 
 void require(bool condition, const char *message) {
@@ -59,6 +62,18 @@ std::size_t find(const Copier &copier, const std::wstring &relative) {
         if (copier.getEntry(i).sourcePath == relative) return i;
     }
     throw std::runtime_error("Expected entry missing");
+}
+
+std::wstring upper(std::wstring text) {
+    std::transform(text.begin(), text.end(), text.begin(), [](wchar_t character) {
+        return static_cast<wchar_t>(std::towupper(character));
+    });
+    return text;
+}
+
+std::wstring forwardSlashes(std::wstring text) {
+    std::replace(text.begin(), text.end(), L'\\', L'/');
+    return text;
 }
 
 void copyAll(Copier &copier) {
@@ -157,13 +172,47 @@ void failuresAndEmptySource() {
     require(!copier.copy(find(copier, L"vanishing")), "Missing file copy reported success");
 }
 
+void directoryChecks() {
+    Fixture f;
+    write(f.root / L"file", "not a directory");
+    Copier copier;
+    const auto check = [&copier](const std::wstring &source, const std::wstring &destination) {
+        copier.setDirectories(source, destination);
+        return copier.checkDirectories();
+    };
+    const std::wstring source = f.source.wstring();
+    const std::wstring destination = f.destination.wstring();
+    require(check(L"", destination) == DirectoryResult::Empty, "Empty source accepted");
+    require(check(source, L"") == DirectoryResult::Empty, "Empty destination accepted");
+    require(check((f.root / L"missing").wstring(), destination) == DirectoryResult::SourceNotFound,
+            "Missing source accepted");
+    require(check((f.root / L"file").wstring(), destination) == DirectoryResult::SourceNotFound,
+            "File accepted as source");
+    require(check(source, source) == DirectoryResult::SameDirectory, "Same directory accepted");
+    require(check(source, upper(source) + L"\\") == DirectoryResult::SameDirectory,
+            "Same directory with other case and a trailing backslash accepted");
+    require(check(forwardSlashes(source), source) == DirectoryResult::SameDirectory,
+            "Same directory with forward slashes accepted");
+    require(check(source, (f.source / L"inner").wstring()) == DirectoryResult::DestinationInsideSource,
+            "Destination inside source accepted");
+    require(check(source, (f.source / L"a" / L"b").wstring()) == DirectoryResult::DestinationInsideSource,
+            "Destination deep inside source accepted");
+    // "source2" starts like "source" but is not inside it.
+    require(check(source, (f.root / L"source2").wstring()) == DirectoryResult::Ok,
+            "Sibling with the same prefix rejected");
+    require(check(source + L"\\", destination) == DirectoryResult::Ok, "Valid directories rejected");
+    require(!fs::exists(f.destination) && !fs::exists(f.source / L"inner") && !fs::exists(f.root / L"source2"),
+            "Checking the directories created one");
+}
+
 int main() {
     unsigned failures = 0;
     const struct { const char *name; void (*run)(); } tests[] = {
         {"binary/Unicode copy and folder release", copyAndRelease},
         {"rename, validation, skip and reload", renameAndSkip},
         {"file and directory path boundaries", boundaries},
-        {"failures and empty source", failuresAndEmptySource}
+        {"failures and empty source", failuresAndEmptySource},
+        {"directory checks before a copy", directoryChecks}
     };
     for (const auto &test : tests) {
         try {
