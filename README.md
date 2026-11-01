@@ -88,7 +88,7 @@ make
 ```
 include/      Class definitions (.hpp)
 src/          Class implementations (.cpp) and main.cpp
-tests/        Integration tests for Copier
+tests/        Integration tests for Copier and UI tests for the windows
 resources/    Windows manifest (modern look for the controls)
 docs/         Class diagram, flow diagrams and test plan
 Dockerfile    Build environment (Fedora + MinGW-w64)

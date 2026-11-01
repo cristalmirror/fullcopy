@@ -2,7 +2,8 @@
 
 Automated checks run on a real Windows GitHub Actions runner. They build the
 application with warnings treated as errors and execute filesystem integration
-tests against `Copier`. No application behavior is changed by this test suite.
+tests against `Copier` and UI tests against the `Controller` and its windows. No
+application behavior is changed by this test suite.
 
 ## Automated coverage
 
@@ -12,6 +13,23 @@ tests against `Copier`. No application behavior is changed by this test suite.
 - Subtree skipping without losing siblings, and clearing state on a fresh scan.
 - Missing sources, impossible destinations, empty sources and files disappearing after scanning.
 - Immediate deletion of both source and destination while `Copier` remains alive.
+- Directory checks before a copy: empty paths, a missing source, a file as source, the same
+  directory with another case, a trailing backslash or forward slashes, a destination inside the
+  source, and a sibling that starts with the same name (`source2`).
+
+UI tests (`tests/ui_tests.cpp`) run the real `Controller`, `Window` and `Decision` windows on
+the main thread, while a driver thread plays the user with window messages only:
+
+- Every rejected start shows its error, keeps the controls enabled and creates nothing.
+- A copy with quoted paths finishes with the right summary, status and controls, and the
+  destination can be deleted as soon as the program closes.
+- The **Name too long** window shows the path length, the maximum length and the current name;
+  invalid, too long and already used names show their error and keep it open; a valid name lets
+  the copy go on. Start and Enter are ignored during the copy.
+- Closing the **Name too long** window skips a directory with all its content, and the summary
+  counts it.
+- Closing the program while the **Name too long** window is open shows *Cancelling...*, waits for
+  the copy thread and closes without a summary.
 
 To reproduce in a Windows MSYS2 MINGW64 shell with GCC and make installed, run
 `make CXX=g++ WINDRES=windres`, then:
@@ -19,7 +37,12 @@ To reproduce in a Windows MSYS2 MINGW64 shell with GCC and make installed, run
 ```sh
 g++ -std=c++17 -O2 -Wall -Wextra -Werror -DUNICODE -D_UNICODE -D_WIN32_WINNT=0x0601 -Iinclude tests/copier_tests.cpp src/Copier.cpp src/Common.cpp -o bin/copier_tests.exe -static -lshell32 -lole32 -luuid -lgdi32 -luser32
 ./bin/copier_tests.exe
+g++ -std=c++17 -O2 -Wall -Wextra -Werror -DUNICODE -D_UNICODE -D_WIN32_WINNT=0x0601 -Iinclude tests/ui_tests.cpp src/Controller.cpp src/Window.cpp src/Decision.cpp src/Copier.cpp src/Common.cpp -o bin/ui_tests.exe -static -lcomctl32 -lshell32 -lole32 -luuid -lgdi32 -luser32
+./bin/ui_tests.exe
 ```
+
+The UI tests open real windows and message boxes for a few seconds. Do not use the mouse or
+the keyboard while they run.
 
 Fixtures are isolated under the Windows temporary directory. Cleanup is attempted
 after each case. The folder release test checks deletion explicitly; destructor
@@ -52,8 +75,10 @@ Require a green Windows build/test job, passing manual checks above, and no
 unresolved crash, data corruption, folder-lock or resource-growth reports for the
 candidate commit. Passing tests provides evidence, not a proof of stability.
 
-The suite does not drive `Window`, `Decision` or `Controller`, simulate allocation
-failures, measure GDI lifetime, test network shares, or validate all Windows versions.
-`Copier::checkDirectories()` has no automated test yet; the *Input validation* manual
-check covers it. Record failures as bugs instead of weakening acceptance criteria to
-obtain a green result.
+The UI tests cover part of the *Input validation*, *UI and decisions* and *Cancellation*
+manual checks, but not the Browse dialog, the real mouse and keyboard, the layout,
+cancellation during a scan or a large file copy, or closing with the X button and Alt+F4.
+The suite does not simulate allocation failures, measure GDI lifetime, test network
+shares, or validate all Windows versions, so the manual checks above are still required
+for a release. Record failures as bugs instead of weakening acceptance criteria to obtain
+a green result.

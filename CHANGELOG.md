@@ -23,6 +23,8 @@ and this project uses [Semantic Versioning](https://semver.org/).
 
 - Comments in English for every function, and step by step inside the long ones.
 - UML activity diagrams in `docs/flow_diagram.md`.
+- Tests for `Copier::checkDirectories()`, and UI tests (`tests/ui_tests.cpp`) that drive the
+  `Controller`, the main window and the **Name too long** window. Both run on the Windows CI job.
 
 ## [1.0.0] - 2026-10-31
 
