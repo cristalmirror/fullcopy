@@ -1,6 +1,7 @@
 # FullCopy - Class Diagram
 
 Class diagram of the current code (`include/` and `src/`). Everything lives in the `fullcopy` namespace.
+The order in which the classes work together is shown in [flow_diagram.md](flow_diagram.md).
 
 ```mermaid
 classDiagram

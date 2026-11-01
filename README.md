@@ -88,13 +88,30 @@ make
 ```
 include/      Class definitions (.hpp)
 src/          Class implementations (.cpp) and main.cpp
+tests/        Integration tests for Copier
 resources/    Windows manifest (modern look for the controls)
-docs/         Class diagrams
+docs/         Class diagram, flow diagrams and test plan
 Dockerfile    Build environment (Fedora + MinGW-w64)
 Makefile      Build rules
 ```
 
-The class design is described in [docs/class_diagram.md](docs/class_diagram.md).
+## Architecture
+
+The code follows the Model-View-Controller (MVC) pattern:
+
+| Layer | Files | Job |
+|---|---|---|
+| Model | `Copier.hpp`, `Copier.cpp` | Checks the directories, scans the source, checks the path lengths, renames and copies. It does not know about windows. |
+| View | `Window.hpp`, `Window.cpp`, `Decision.hpp`, `Decision.cpp` | Controls, texts and messages for the user. Every user action goes to the `Controller`; the views never call the `Copier`. |
+| Controller | `Controller.hpp`, `Controller.cpp` | Reads the input from the views, uses the `Copier` on a separate copy thread, handles cancellation and tells the views what to show. |
+
+`main.cpp` creates only the `Controller`, which creates the `Copier` and the main `Window`.
+`Common.hpp` and `Common.cpp` hold the control IDs, the messages between the copy thread and the main
+window, and helper functions shared by every class.
+
+- [docs/class_diagram.md](docs/class_diagram.md): the classes and how they relate.
+- [docs/flow_diagram.md](docs/flow_diagram.md): UML activity diagrams of a copy, a rename and closing the program.
+- [docs/testing.md](docs/testing.md): automated tests and manual checks.
 
 ## Changelog
 

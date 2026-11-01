@@ -7,6 +7,21 @@ and this project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+
+- The code follows the Model-View-Controller pattern. A new `Controller` class connects the views
+  (`Window`, `Decision`) with the model (`Copier`) and runs the copy thread. `main.cpp` creates the
+  `Controller`. The behaviour of the program does not change.
+- The checks of the source and destination directories moved from the main window to
+  `Copier::checkDirectories()`, which returns a `DirectoryResult`.
+- `Decision` no longer uses `Copier` directly: it receives a `RenameRequest` and renames through
+  `Controller::rename()`.
+
+### Added
+
+- Comments in English for every function, and step by step inside the long ones.
+- UML activity diagrams in `docs/flow_diagram.md`.
+
 ## [1.0.0] - 2026-10-31
 
 ### Changed

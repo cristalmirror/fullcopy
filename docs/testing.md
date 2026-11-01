@@ -52,8 +52,8 @@ Require a green Windows build/test job, passing manual checks above, and no
 unresolved crash, data corruption, folder-lock or resource-growth reports for the
 candidate commit. Passing tests provides evidence, not a proof of stability.
 
-The suite does not drive `Window` or `Decision`, simulate allocation failures,
-measure GDI lifetime, test network shares, or validate all Windows versions.
-`FindHandle` is currently unused and the application-created font is still not
-explicitly released; adding tests does not repair either issue. Record failures
-as bugs instead of weakening acceptance criteria to obtain a green result.
+The suite does not drive `Window`, `Decision` or `Controller`, simulate allocation
+failures, measure GDI lifetime, test network shares, or validate all Windows versions.
+`Copier::checkDirectories()` has no automated test yet; the *Input validation* manual
+check covers it. Record failures as bugs instead of weakening acceptance criteria to
+obtain a green result.
