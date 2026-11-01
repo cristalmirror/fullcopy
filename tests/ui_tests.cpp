@@ -167,6 +167,18 @@ LRESULT send(HWND window, UINT message, WPARAM wParam, LPARAM lParam) {
     return static_cast<LRESULT>(result);
 }
 
+// Presses the button of a message box (FullCopy only shows message boxes with one button).
+// The id of that button is not always IDOK, so the command uses the real id and handle of the
+// button, like a mouse click does. Without a button, it asks the box to close.
+void pressMessageBoxButton(HWND box) {
+    const HWND button = FindWindowExW(box, nullptr, L"Button", nullptr);
+    if (button == nullptr) {
+        PostMessageW(box, WM_CLOSE, 0, 0);
+        return;
+    }
+    PostMessageW(box, WM_COMMAND, MAKEWPARAM(GetDlgCtrlID(button), BN_CLICKED), reinterpret_cast<LPARAM>(button));
+}
+
 // Plays the user from the driver thread.
 class Driver {
 public:
@@ -258,9 +270,17 @@ public:
         return {box, getText(box), getText(GetDlgItem(box, MESSAGE_BOX_TEXT_ID))};
     }
 
-    // Presses OK in a message box and waits until it is gone.
+    // Presses the button of a message box and waits until it is gone. If the box is still open
+    // after a moment, it also asks it to close, like the X button.
     void closeMessageBox(HWND box) const {
-        PostMessageW(box, WM_COMMAND, IDOK, 0);
+        pressMessageBoxButton(box);
+        const ULONGLONG fallback = GetTickCount64() + 2000;
+        while (IsWindow(box) != FALSE && GetTickCount64() < fallback) {
+            Sleep(POLL_MS);
+        }
+        if (IsWindow(box) != FALSE) {
+            PostMessageW(box, WM_CLOSE, 0, 0);
+        }
         waitGone(box, "message box");
     }
 
@@ -308,7 +328,8 @@ public:
             for (HWND window : windows()) {
                 const std::wstring name = className(window);
                 if (name == MESSAGE_BOX_CLASS) {
-                    PostMessageW(window, WM_COMMAND, IDOK, 0);
+                    pressMessageBoxButton(window);
+                    PostMessageW(window, WM_CLOSE, 0, 0);
                 } else if (name == DECISION_CLASS) {
                     PostMessageW(window, WM_COMMAND, IDCANCEL, 0);
                 } else if (name == MAIN_CLASS) {
