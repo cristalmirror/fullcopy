@@ -387,6 +387,9 @@ namespace fullcopy {
             case DirectoryResult::SourceNotFound:
                 showError(L"The source directory does not exist.");
                 return;
+            case DirectoryResult::DestinationUnavailable:
+                showError(L"The destination directory could not be resolved or accessed.");
+                return;
             case DirectoryResult::SameDirectory:
                 showError(L"The source and the destination directories must be different.");
                 return;

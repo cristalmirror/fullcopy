@@ -31,7 +31,8 @@ namespace fullcopy {
         Empty,
         SourceNotFound,
         SameDirectory,
-        DestinationInsideSource
+        DestinationInsideSource,
+        DestinationUnavailable
     };
 
     // Model: scans the source directory, checks and renames the entries, and copies them.

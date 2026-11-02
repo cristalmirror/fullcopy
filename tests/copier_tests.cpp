@@ -7,6 +7,7 @@
 #include <iostream>
 #include <stdexcept>
 #include <string>
+#include <utility>
 
 namespace fs = std::filesystem;
 using fullcopy::Copier;
@@ -197,6 +198,28 @@ void directoryChecks() {
             "Destination inside source accepted");
     require(check(source, (f.source / L"a" / L"b").wstring()) == DirectoryResult::DestinationInsideSource,
             "Destination deep inside source accepted");
+    const std::wstring extendedSource = L"\\\\?\\" + source;
+    const std::wstring inside = (f.source / L"inner").wstring();
+    for (const auto &pair : {
+        std::make_pair(source, extendedSource),
+        std::make_pair(extendedSource, source)
+    }) {
+        require(check(pair.first, pair.second) == DirectoryResult::SameDirectory,
+                "Extended path alias accepted as a different directory");
+        require(!copier.load(), "Load accepted identical directory aliases");
+    }
+    for (const auto &pair : {
+        std::make_pair(source, L"\\\\?\\" + inside),
+        std::make_pair(extendedSource, inside)
+    }) {
+        require(check(pair.first, pair.second) == DirectoryResult::DestinationInsideSource,
+                "Extended path alias accepted inside source");
+        require(!copier.load(), "Load accepted destination inside source");
+        require(!fs::exists(f.source / L"inner"), "Rejected load created destination");
+    }
+    require(check(source, (f.root / L"file" / L"child").wstring()) ==
+                DirectoryResult::DestinationUnavailable,
+            "Destination under a file accepted");
     // "source2" starts like "source" but is not inside it.
     require(check(source, (f.root / L"source2").wstring()) == DirectoryResult::Ok,
             "Sibling with the same prefix rejected");

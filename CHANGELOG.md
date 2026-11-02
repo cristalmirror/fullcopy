@@ -7,6 +7,10 @@ and this project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- Resolve directory aliases before validating source/destination safety and loading entries.
+
 ## [1.0.1] - 2026-11-01
 
 ### Changed

@@ -6,6 +6,8 @@
 
 #include <algorithm>
 #include <cwchar>
+#include <filesystem>
+#include <utility>
 
 namespace fullcopy {
 
@@ -15,6 +17,74 @@ namespace fullcopy {
             const DWORD attributes = GetFileAttributesW(path.c_str());
             return attributes != INVALID_FILE_ATTRIBUTES
                 && (attributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
+        }
+
+        // Owns a directory handle while resolving aliases through the file system.
+        class DirectoryHandle {
+        public:
+            explicit DirectoryHandle(HANDLE handle) : handle_(handle) {}
+            ~DirectoryHandle() {
+                if (handle_ != INVALID_HANDLE_VALUE) {
+                    CloseHandle(handle_);
+                }
+            }
+            DirectoryHandle(const DirectoryHandle&) = delete;
+            DirectoryHandle &operator=(const DirectoryHandle&) = delete;
+            HANDLE get() const { return handle_; }
+        private:
+            HANDLE handle_;
+        };
+
+        // Resolve existing ancestors first, including junctions. Missing destination
+        // components are appended only after resolving the nearest existing directory.
+        bool resolveDirectoryPath(const std::wstring &path, bool allowMissing,
+                                  std::wstring &resolved) {
+            namespace fs = std::filesystem;
+            fs::path current(path);
+            std::vector<std::wstring> missingParts;
+            for (;;) {
+                DirectoryHandle handle(CreateFileW(current.c_str(), FILE_READ_ATTRIBUTES,
+                    FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
+                    OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nullptr));
+                if (handle.get() != INVALID_HANDLE_VALUE) {
+                    BY_HANDLE_FILE_INFORMATION info{};
+                    if (!GetFileInformationByHandle(handle.get(), &info) ||
+                        (info.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) == 0) {
+                        return false;
+                    }
+                    const DWORD flags = FILE_NAME_NORMALIZED | VOLUME_NAME_DOS;
+                    const DWORD required = GetFinalPathNameByHandleW(handle.get(), nullptr, 0, flags);
+                    if (required == 0) {
+                        return false;
+                    }
+                    std::wstring buffer(static_cast<std::size_t>(required) + 1, L'\0');
+                    const DWORD written = GetFinalPathNameByHandleW(handle.get(), buffer.data(),
+                        static_cast<DWORD>(buffer.size()), flags);
+                    if (written == 0 || written >= buffer.size()) {
+                        return false;
+                    }
+                    buffer.resize(written);
+                    fs::path result(buffer);
+                    for (auto it = missingParts.rbegin(); it != missingParts.rend(); ++it) {
+                        result /= *it;
+                    }
+                    resolved = result.wstring();
+                    while (!resolved.empty() && resolved.back() == L'\\') {
+                        resolved.pop_back();
+                    }
+                    return true;
+                }
+                const DWORD error = GetLastError();
+                if (!allowMissing || (error != ERROR_FILE_NOT_FOUND && error != ERROR_PATH_NOT_FOUND)) {
+                    return false;
+                }
+                const fs::path parent = current.parent_path();
+                if (parent.empty() || parent == current || current.filename().empty()) {
+                    return false;
+                }
+                missingParts.push_back(current.filename().wstring());
+                current = parent;
+            }
         }
 
         // Progress callback of CopyFileExW, called while a file is being copied. When the user
@@ -104,17 +174,18 @@ namespace fullcopy {
             return DirectoryResult::Empty;
         }
 
-        if (!isDirectory(sourceRoot_)) {
+        std::wstring source;
+        std::wstring destination;
+        if (!resolveDirectoryPath(sourceRoot_, false, source)) {
             return DirectoryResult::SourceNotFound;
         }
-
-        if (equalsIgnoreCase(sourceRoot_, destinationRoot_)) {
+        if (!resolveDirectoryPath(destinationRoot_, true, destination)) {
+            return DirectoryResult::DestinationUnavailable;
+        }
+        if (equalsIgnoreCase(source, destination)) {
             return DirectoryResult::SameDirectory;
         }
-
-        // The prefix ends with a backslash, so "C:\data2" is not taken as inside "C:\data".
-        const std::wstring sourcePrefix = sourceRoot_.back() == L'\\' ? sourceRoot_ : sourceRoot_ + L'\\';
-        if (startsWithIgnoreCase(destinationRoot_, sourcePrefix)) {
+        if (startsWithIgnoreCase(destination, source + L'\\')) {
             return DirectoryResult::DestinationInsideSource;
         }
 
@@ -124,6 +195,9 @@ namespace fullcopy {
     // Makes sure the destination exists (it is created if needed) and scans the source directory.
     bool Copier::load(std::atomic_bool *cancellation) {
         entries_.clear();
+        if (checkDirectories() != DirectoryResult::Ok) {
+            return false;
+        }
 
         // The source must be an existing directory.
         const DWORD attributes = GetFileAttributesW(getFullSourcePath(L"").c_str());
