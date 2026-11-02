@@ -10,6 +10,7 @@ and this project uses [Semantic Versioning](https://semver.org/).
 ### Fixed
 
 - Resolve directory aliases before validating source/destination safety and loading entries.
+- Reject COM/LPT device names with superscript digits, including names with extensions.
 
 ## [1.0.1] - 2026-11-01
 

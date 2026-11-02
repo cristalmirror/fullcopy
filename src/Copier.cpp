@@ -134,7 +134,9 @@ namespace fullcopy {
             static const wchar_t *const RESERVED[] = {
                 L"CON", L"PRN", L"AUX", L"NUL",
                 L"COM1", L"COM2", L"COM3", L"COM4", L"COM5", L"COM6", L"COM7", L"COM8", L"COM9",
-                L"LPT1", L"LPT2", L"LPT3", L"LPT4", L"LPT5", L"LPT6", L"LPT7", L"LPT8", L"LPT9"
+                L"LPT1", L"LPT2", L"LPT3", L"LPT4", L"LPT5", L"LPT6", L"LPT7", L"LPT8", L"LPT9",
+                L"COM\u00B9", L"COM\u00B2", L"COM\u00B3",
+                L"LPT\u00B9", L"LPT\u00B2", L"LPT\u00B3"
             };
 
             // Only the part before the first dot matters: "nul.txt" is reserved too.

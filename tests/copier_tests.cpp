@@ -118,7 +118,10 @@ void renameAndSkip() {
     require(copier.rename(directory, L"OTHER") == RenameResult::AlreadyExists, "Case collision accepted");
     require(copier.rename(directory, L"renamed") == RenameResult::Ok, "Rename failed");
     require(copier.getEntry(child).destinationPath == L"renamed\\child", "Child path not renamed");
-    for (const auto *name : {L"CON", L"nul.txt", L"bad/name", L"tail.", L"tail ", L".."}) {
+    for (const auto *name : {L"CON", L"nul.txt", L"bad/name", L"tail.", L"tail ", L"..",
+                             L"COM\u00B9", L"COM\u00B2", L"COM\u00B3",
+                             L"LPT\u00B9", L"LPT\u00B2", L"LPT\u00B3",
+                             L"com\u00B9.txt", L"lpt\u00B2.backup"}) {
         require(copier.rename(directory, name) == RenameResult::InvalidName, "Invalid name accepted");
     }
     require(copier.rename(directory, L"") == RenameResult::Empty, "Empty name accepted");
