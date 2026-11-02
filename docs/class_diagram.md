@@ -10,6 +10,7 @@ classDiagram
     class Controller {
         -Copier copier_
         -Window window_
+        -WorkerResult workerResult_
         -HANDLE workerThread_
         -atomic_bool cancelRequested_
         -bool closePending_
@@ -22,11 +23,10 @@ classDiagram
         +onProgress(int percentage) void
         +onRenameRequest(size_t entryIndex) bool
         +onCurrentEntry(size_t entryIndex) void
-        +onCopyFinished(size_t failed, size_t skipped) void
-        +onCopyFailed() void
+        +pollWorker() void
         +rename(size_t entryIndex, wstring newName) RenameResult
         -copyThread(LPVOID parameter)$ DWORD
-        -runCopy() void
+        -runCopy() WorkerResult
         -finishCopy() bool
         -finishWorker() void
     }
@@ -162,6 +162,7 @@ classDiagram
         SourceNotFound
         SameDirectory
         DestinationInsideSource
+        DestinationUnavailable
     }
 
     class Common {
@@ -169,8 +170,8 @@ classDiagram
         +ControlId enum
         +WM_APP_PROGRESS$ UINT
         +WM_APP_RENAME_REQUEST$ UINT
-        +WM_APP_COPY_FINISHED$ UINT
-        +WM_APP_COPY_FAILED$ UINT
+        +WM_APP_WORKER_DONE$ UINT
+        +WORKER_POLL_TIMER$ UINT_PTR
         +WM_APP_CURRENT_ENTRY$ UINT
         +equalsIgnoreCase(wstring first, wstring second) bool
         +joinPath(wstring base, wstring part) wstring
@@ -214,7 +215,9 @@ The code follows the Model-View-Controller pattern:
 - **Window** creates one `Decision` only while a name is too long (`unique_ptr`, 0..1).
 - **Decision** receives a `RenameRequest` with the data to show, and calls `Controller::rename()` when the user presses *Accept*, then calls `selfDestroy()`.
 - **Copier** stores the scanned files and directories as `CopyEntry` items, in pre-order (a directory always comes before its content).
-- `Copier::checkDirectories()` rejects empty directories, a missing source, and a destination equal to or inside the source before the copy starts.
+- `Copier::checkDirectories()` resolves existing directory aliases and rejects empty paths, a missing source, an unavailable destination, and a destination equal to or inside the source. `load()` repeats this validation before creating the destination.
+- Scanning uses an explicit stack and closes each directory search before processing its children.
+- `Controller::WorkerResult` stores success, failed and skipped counts. The UI reads it only after observing thread termination. A timer established before worker creation provides completion recovery if the notification is lost.
 - A failed or cancelled scan discards partial entries and stops the operation before files are copied. Existing destination paths must be directories, and existing files are never overwritten.
 - `Controller` shares an atomic cancellation flag with `Copier`. Scanning checks it between entries, and `CopyFileExW` checks it through its progress callback.
 - **Common** is not a class: it groups the control IDs, the messages between the copy thread and the main window, and the UI helper functions (`include/Common.hpp`).

@@ -7,12 +7,21 @@ and this project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.0.2] - 2026-11-02
+
 ### Fixed
 
-- Resolve directory aliases before validating source/destination safety and loading entries.
-- Reject COM/LPT device names with superscript digits, including names with extensions.
-- Scan directory trees iteratively with a single search handle; cover deep trees and cancellation.
-- Recover worker completion through a timer when the completion notification is lost.
+- Resolve source and destination directory aliases before checking equality or containment,
+  and repeat validation before loading entries. Unresolvable destinations are rejected.
+- Reject reserved COM/LPT device names containing superscript digits, including extensions.
+- Scan directory trees iteratively while keeping only one search handle open at a time.
+- Preserve worker results and poll thread termination so a lost completion notification
+  does not leave the interface busy or prevent a pending close.
+
+### Added
+
+- Regression tests for extended path aliases, superscript device names, deep scans,
+  cancellation, and completion without the worker notification.
 
 ## [1.0.1] - 2026-11-01
 

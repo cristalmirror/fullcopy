@@ -8,7 +8,7 @@
 #
 # The executable name includes the version: bin/fullcopy-$(VERSION).exe
 
-VERSION   := 1.0.1
+VERSION   := 1.0.2
 
 CXX       := x86_64-w64-mingw32-g++
 WINDRES   := x86_64-w64-mingw32-windres

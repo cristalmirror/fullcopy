@@ -48,13 +48,13 @@ flowchart TD
         mSetDirs["Controller: trim the paths<br/>Copier::setDirectories()"]:::controller
         mCheckDirs{"Copier::checkDirectories()<br/>returns Ok?"}:::model
         mDirError["Window::showDirectoryError()"]:::view
-        mStarted["Window::showCopyStarted()"]:::view
+        mStarted["Controller: establish completion timer<br/>Window::showCopyStarted()"]:::view
         mThread["Controller: CreateThread(copyThread)"]:::controller
         mThreadOk{"Thread created?"}
         mStartFailed["Window::showStartFailed()"]:::view
         mKeep["Window: the message loop keeps running<br/>and shows the progress and the current path"]:::view
-        mAccept>"WM_APP_COPY_FINISHED<br/>or WM_APP_COPY_FAILED received"]:::signal
-        mDone["Controller::onCopyFinished()<br/>or Controller::onCopyFailed()"]:::controller
+        mAccept>"WM_APP_WORKER_DONE or timer<br/>observes thread termination"]:::signal
+        mDone["Controller::pollWorker()"]:::controller
         mFinish["Controller::finishCopy():<br/>wait for the copy thread"]:::controller
         mPending{"Close pending?"}
         mClose["Window::close()<br/>(see diagram 3)"]:::view
@@ -63,9 +63,9 @@ flowchart TD
 
     subgraph copyThread ["Copy thread: Controller::runCopy()"]
         direction TB
-        cLoad["Copier::load(): create the destination<br/>and scan the source"]:::model
+        cLoad["Copier::load(): validate directories,<br/>create destination and scan iteratively"]:::model
         cLoadOk{"Scan OK?"}
-        cFailed>"post WM_APP_COPY_FAILED"]:::signal
+        cFailed>"store failed result<br/>post WM_APP_WORKER_DONE"]:::signal
         cMore{"More entries<br/>and not cancelled?"}
         cCurrent>"post WM_APP_CURRENT_ENTRY"]:::signal
         cFits{"Copier::check():<br/>does the path fit?"}:::model
@@ -78,7 +78,7 @@ flowchart TD
         cProgress>"post WM_APP_PROGRESS<br/>if the percentage changed"]:::signal
         cEmpty{"No entries at all?"}
         cFull>"post WM_APP_PROGRESS (100)"]:::signal
-        cFinished>"post WM_APP_COPY_FINISHED<br/>(failed and skipped counts)"]:::signal
+        cFinished>"store success, failed and skipped counts<br/>post WM_APP_WORKER_DONE"]:::signal
         cEnd(("✕")):::flowFinal
     end
 
@@ -134,8 +134,11 @@ flowchart TD
 Notes:
 
 - A skipped entry still goes through `Copier::copy()`, which does nothing for it and returns `true`.
-- After a cancellation the loop stops and the thread still posts `WM_APP_COPY_FINISHED`. A
-  cancellation during the scan makes `Copier::load()` fail, so the thread posts `WM_APP_COPY_FAILED`.
+- The worker stores its result before posting `WM_APP_WORKER_DONE`. Cancellation during
+  scanning records a failed scan; cancellation during copying preserves the partial counts.
+- Both the notification and the fallback timer call `Controller::pollWorker()`. It finishes
+  the operation only after the worker thread is signalled. The timer is established before
+  creating the worker; if timer creation fails, the copy does not start.
 - The main window passes every `WM_APP_*` message to the `Controller` (`Window::handleMessage()`).
 
 ## 2. Rename an entry
@@ -207,7 +210,7 @@ flowchart TD
         xRunning{"Copy thread running?"}
         xCancel["Controller: cancelRequested_ = true<br/>and closePending_ = true"]:::controller
         xCancelling["Window::showCancelling()"]:::view
-        xWaitMessage>"WM_APP_COPY_FINISHED<br/>or WM_APP_COPY_FAILED received"]:::signal
+        xWaitMessage>"WM_APP_WORKER_DONE or timer<br/>observes thread termination"]:::signal
         xFinish["Controller::finishCopy():<br/>wait for the copy thread"]:::controller
         xClose["Window::close(): DestroyWindow()"]:::view
         xDestroy["Window: WM_DESTROY → PostQuitMessage()"]:::view
@@ -218,7 +221,7 @@ flowchart TD
     subgraph copyThread ["Copy thread"]
         direction TB
         xStops["Sees cancelRequested_ between entries<br/>or inside CopyFileExW, and stops"]:::controller
-        xPost>"post WM_APP_COPY_FINISHED<br/>or WM_APP_COPY_FAILED"]:::signal
+        xPost>"store result<br/>post WM_APP_WORKER_DONE"]:::signal
         xThreadEnd(("✕")):::flowFinal
     end
 
