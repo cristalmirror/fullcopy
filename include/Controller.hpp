@@ -35,8 +35,7 @@ namespace fullcopy {
         void onProgress(int percentage);
         bool onRenameRequest(std::size_t entryIndex);
         void onCurrentEntry(std::size_t entryIndex);
-        void onCopyFinished(std::size_t failed, std::size_t skipped);
-        void onCopyFailed();
+        void pollWorker();
 
         // Action from the Decision window (main thread, while the copy thread waits).
         RenameResult rename(std::size_t entryIndex, const std::wstring &newName);
@@ -44,7 +43,12 @@ namespace fullcopy {
     private:
         // Copy thread: walks every entry, asks for a new name when needed and copies it.
         static DWORD WINAPI copyThread(LPVOID parameter);
-        void runCopy();
+        struct WorkerResult {
+            bool succeeded = false;
+            std::size_t failed = 0;
+            std::size_t skipped = 0;
+        };
+        WorkerResult runCopy();
 
         // Waits for the copy thread to end. Returns false if the window was closed instead,
         // because the user asked to close it during the copy.
@@ -54,6 +58,7 @@ namespace fullcopy {
         Copier copier_;
         Window window_;
 
+        WorkerResult workerResult_;
         HANDLE workerThread_;
         std::atomic_bool cancelRequested_;
         bool closePending_;

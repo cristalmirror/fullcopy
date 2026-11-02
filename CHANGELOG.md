@@ -12,6 +12,7 @@ and this project uses [Semantic Versioning](https://semver.org/).
 - Resolve directory aliases before validating source/destination safety and loading entries.
 - Reject COM/LPT device names with superscript digits, including names with extensions.
 - Scan directory trees iteratively with a single search handle; cover deep trees and cancellation.
+- Recover worker completion through a timer when the completion notification is lost.
 
 ## [1.0.1] - 2026-11-01
 

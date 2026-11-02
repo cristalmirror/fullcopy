@@ -156,13 +156,16 @@ namespace fullcopy {
         case WM_APP_RENAME_REQUEST:
             return controller_.onRenameRequest(static_cast<std::size_t>(wParam)) ? TRUE : FALSE;
 
-        case WM_APP_COPY_FINISHED:
-            controller_.onCopyFinished(static_cast<std::size_t>(wParam), static_cast<std::size_t>(lParam));
+        case WM_APP_WORKER_DONE:
+            controller_.pollWorker();
             return 0;
 
-        case WM_APP_COPY_FAILED:
-            controller_.onCopyFailed();
-            return 0;
+        case WM_TIMER:
+            if (wParam == WORKER_POLL_TIMER) {
+                controller_.pollWorker();
+                return 0;
+            }
+            break;
 
         case WM_APP_CURRENT_ENTRY:
             controller_.onCurrentEntry(static_cast<std::size_t>(wParam));
