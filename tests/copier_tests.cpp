@@ -231,6 +231,36 @@ void directoryChecks() {
             "Checking the directories created one");
 }
 
+// Use extended paths so the fixture exceeds MAX_PATH without recursion in the test.
+void deepScanAndCancellation() {
+    Fixture f;
+    std::wstring current = L"\\\\?\\" + f.source.wstring();
+    std::vector<std::wstring> directories;
+    for (unsigned i = 0; i < 300; ++i) {
+        current += L"\\d";
+        require(CreateDirectoryW(current.c_str(), nullptr) != FALSE, "Deep fixture creation failed");
+        directories.push_back(current);
+    }
+    Copier copier;
+    copier.setDirectories(f.source.wstring(), f.destination.wstring());
+    const bool loaded = copier.load();
+    const auto count = copier.getEntryCount();
+    bool ordered = loaded && count == directories.size();
+    for (std::size_t i = 0; ordered && i < count; ++i) {
+        ordered = copier.getEntry(i).isDirectory &&
+                  copier.getEntry(i).sourcePath.size() == 2 * i + 1;
+    }
+    std::atomic_bool cancellation{true};
+    const bool cancelled = !copier.load(&cancellation) && copier.getEntryCount() == 0;
+    bool released = true;
+    for (auto it = directories.rbegin(); it != directories.rend(); ++it) {
+        released = (RemoveDirectoryW(it->c_str()) != FALSE) && released;
+    }
+    require(ordered, "Deep scan failed or changed pre-order");
+    require(cancelled, "Cancelled scan kept entries");
+    require(released, "Deep scan retained search handles");
+}
+
 int main() {
     unsigned failures = 0;
     const struct { const char *name; void (*run)(); } tests[] = {
@@ -238,7 +268,8 @@ int main() {
         {"rename, validation, skip and reload", renameAndSkip},
         {"file and directory path boundaries", boundaries},
         {"failures and empty source", failuresAndEmptySource},
-        {"directory checks before a copy", directoryChecks}
+        {"directory checks before a copy", directoryChecks},
+        {"deep scan, cancellation and handle release", deepScanAndCancellation}
     };
     for (const auto &test : tests) {
         try {

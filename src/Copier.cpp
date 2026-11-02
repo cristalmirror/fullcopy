@@ -418,65 +418,68 @@ namespace fullcopy {
         return tempSize_;
     }
 
-    // Adds every file and directory inside relativePath to entries_, and calls itself for each
-    // subdirectory. A directory is always added before its content (pre-order).
-    // Returns false on cancellation or on any error while reading a directory.
+    // Iterative depth-first scan: directories precede their contents, and only
+    // one search handle is open at a time regardless of tree depth.
     bool Copier::scanDirectory(const std::wstring &relativePath, std::atomic_bool *cancellation) {
-        // Stop as soon as the user cancels.
-        if (cancellation != nullptr && cancellation->load()) {
-            return false;
-        }
-
-        // Search for every name inside the directory (pattern "*").
-        const std::wstring directory = getFullSourcePath(relativePath);
-        const std::wstring pattern = joinPath(directory, L"*");
-        WIN32_FIND_DATAW data = {};
-        const HANDLE find = FindFirstFileExW(
-            pattern.c_str(),
-            FindExInfoBasic,
-            &data,
-            FindExSearchNameMatch,
-            nullptr,
-            FIND_FIRST_EX_LARGE_FETCH
-        );
-        if (find == INVALID_HANDLE_VALUE) {
-            const DWORD error = GetLastError();
-            // An existing directory without matching entries is empty.
-            return error == ERROR_FILE_NOT_FOUND && isDirectory(directory);
-        }
-
-        // The guard closes the search handle on every return below.
-        const FindHandle guard(find);
-
-        // Visit the results one by one.
-        do {
-            if (cancellation != nullptr && cancellation->load()) {
+        struct Pending {
+            std::wstring path;
+            bool isDirectory;
+            bool descend;
+            bool addEntry;
+        };
+        std::vector<Pending> pending{{relativePath, true, true, false}};
+        const auto cancelled = [cancellation]() {
+            return cancellation != nullptr && cancellation->load();
+        };
+        while (!pending.empty()) {
+            if (cancelled()) {
                 return false;
             }
-
-            // Skip the special names of the current and the parent directory.
-            const std::wstring name = data.cFileName;
-            if (name == L"." || name == L"..") {
+            Pending item = std::move(pending.back());
+            pending.pop_back();
+            if (item.addEntry) {
+                entries_.push_back({item.path, item.path, item.isDirectory, false});
+            }
+            if (!item.descend) {
                 continue;
             }
-
-            // Store the entry with the same relative path for the source and the destination.
-            const std::wstring childPath = relativePath.empty() ? name : relativePath + L'\\' + name;
-            const bool directoryEntry = (data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
-
-            entries_.push_back({childPath, childPath, directoryEntry, false});
-
-            // Links and junctions are created as empty directories to avoid infinite loops.
-            if (directoryEntry && (data.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) == 0) {
-                if (!scanDirectory(childPath, cancellation)) {
+            std::vector<Pending> children;
+            {
+                const std::wstring directory = getFullSourcePath(item.path);
+                const std::wstring pattern = joinPath(directory, L"*");
+                WIN32_FIND_DATAW data{};
+                const HANDLE find = FindFirstFileExW(pattern.c_str(), FindExInfoBasic,
+                    &data, FindExSearchNameMatch, nullptr, FIND_FIRST_EX_LARGE_FETCH);
+                if (find == INVALID_HANDLE_VALUE) {
+                    const DWORD error = GetLastError();
+                    if (error == ERROR_FILE_NOT_FOUND && isDirectory(directory)) {
+                        continue;
+                    }
+                    return false;
+                }
+                const FindHandle guard(find);
+                do {
+                    if (cancelled()) {
+                        return false;
+                    }
+                    const std::wstring name = data.cFileName;
+                    if (name == L"." || name == L"..") {
+                        continue;
+                    }
+                    const std::wstring child = item.path.empty() ? name : item.path + L'\\' + name;
+                    const bool directoryEntry = (data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
+                    const bool reparse = (data.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) != 0;
+                    children.push_back({child, directoryEntry, directoryEntry && !reparse, true});
+                } while (FindNextFileW(find, &data));
+                if (GetLastError() != ERROR_NO_MORE_FILES) {
                     return false;
                 }
             }
-        } while (FindNextFileW(find, &data));
-
-        // The loop ends when FindNextFileW fails. It must be because there are no more files.
-        const DWORD error = GetLastError();
-        return error == ERROR_NO_MORE_FILES;
+            for (auto it = children.rbegin(); it != children.rend(); ++it) {
+                pending.push_back(std::move(*it));
+            }
+        }
+        return true;
     }
 
     // Returns the absolute source path of a relative path, with the "\\?\" prefix.
