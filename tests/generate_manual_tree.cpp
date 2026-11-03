@@ -56,7 +56,12 @@ std::wstring widen(const std::string &text) {
     }
     const int size = MultiByteToWideChar(CP_UTF8, 0, text.c_str(), static_cast<int>(text.size()), nullptr, 0);
     std::wstring result(static_cast<std::size_t>(size), L'\0');
-    MultiByteToWideChar(CP_UTF8, 0, text.c_str(), static_cast<int>(text.size()), &result[0], size);
+    MultiByteToWideChar(CP_UTF8, 
+                        0, 
+                        text.c_str(), 
+                        static_cast<int>(text.size()), 
+                        &result[0], 
+                        size);
     return result;
 }
 
@@ -65,10 +70,24 @@ std::string narrow(const std::wstring &text) {
     if (text.empty()) {
         return std::string();
     }
-    const int size = WideCharToMultiByte(CP_UTF8, 0, text.c_str(), static_cast<int>(text.size()),
-                                         nullptr, 0, nullptr, nullptr);
+    const int size = WideCharToMultiByte(CP_UTF8,
+                                        0, 
+                                        text.c_str(), 
+                                        static_cast<int>(text.size()),
+                                        nullptr,
+                                        0,
+                                        nullptr,
+                                        nullptr);
+
     std::string result(static_cast<std::size_t>(size), '\0');
-    WideCharToMultiByte(CP_UTF8, 0, text.c_str(), static_cast<int>(text.size()), &result[0], size, nullptr, nullptr);
+    WideCharToMultiByte(CP_UTF8, 
+                        0, 
+                        text.c_str(), 
+                        static_cast<int>(text.size()), 
+                        &result[0], 
+                        size, 
+                        nullptr, 
+                        nullptr);
     return result;
 }
 
@@ -93,15 +112,24 @@ void createDirectory(const std::string &path) {
 
 // Creates a new file with the content. It fails if the file already exists.
 void writeNewFile(const std::string &path, const std::string &content) {
-    const HANDLE file = CreateFileW(widen(path).c_str(), GENERIC_WRITE, 0, nullptr, CREATE_NEW,
-                                    FILE_ATTRIBUTE_NORMAL, nullptr);
+    const HANDLE file = CreateFileW(widen(path).c_str(), 
+                                    GENERIC_WRITE, 
+                                    0, 
+                                    nullptr, 
+                                    CREATE_NEW,
+                                    FILE_ATTRIBUTE_NORMAL, 
+                                    nullptr);
     if (file == INVALID_HANDLE_VALUE) {
         const DWORD error = GetLastError();
         throw std::runtime_error("Could not create the file " + path + " (error " + std::to_string(error) + ")");
     }
 
     DWORD written = 0;
-    const BOOL ok = WriteFile(file, content.data(), static_cast<DWORD>(content.size()), &written, nullptr);
+    const BOOL ok = WriteFile(file, 
+                              content.data(), 
+                              static_cast<DWORD>(content.size()), 
+                              &written, 
+                              nullptr);
     const DWORD error = GetLastError();
     CloseHandle(file);
     if (!ok || written != content.size()) {
@@ -168,8 +196,14 @@ void createJunction(const std::string &link, const std::string &target) {
         throw std::runtime_error("Could not open the junction " + link + " (error " + std::to_string(error) + ")");
     }
     DWORD returned = 0;
-    const BOOL ok = DeviceIoControl(directory, FSCTL_SET_REPARSE_POINT, buffer.data(),
-                                    static_cast<DWORD>(buffer.size()), nullptr, 0, &returned, nullptr);
+    const BOOL ok = DeviceIoControl(directory, 
+                                    FSCTL_SET_REPARSE_POINT, 
+                                    buffer.data(),
+                                    static_cast<DWORD>(buffer.size()), 
+                                    nullptr, 
+                                    0, 
+                                    &returned, 
+                                    nullptr);
     const DWORD error = GetLastError();
     CloseHandle(directory);
     if (!ok) {
