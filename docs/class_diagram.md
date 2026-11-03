@@ -22,6 +22,7 @@ classDiagram
         +onClose() void
         +onProgress(int percentage) void
         +onRenameRequest(size_t entryIndex) bool
+        +onRecursionFound(wstring relativePath) void
         +onCurrentEntry(size_t entryIndex) void
         +pollWorker() void
         +rename(size_t entryIndex, wstring newName) RenameResult
@@ -54,13 +55,14 @@ classDiagram
         +getSourceDirectory() wstring
         +getDestinationDirectory() wstring
         +askNewName(RenameRequest request) bool
+        +showWarning(WarningKind kind, vector~wstring~ paths) void
         +updateProgressBar(int percentage) void
         +setCurrentPath(wstring path) void
         +showDirectoryError(DirectoryResult result) void
         +showCopyStarted() void
         +showStartFailed() void
         +showCancelling() void
-        +showCopyFinished(size_t failed, size_t skipped) void
+        +showCopyFinished(size_t failed, size_t skipped, size_t recursions, vector~wstring~ inaccessible) void
         +showCopyFailed() void
         -windowProcedure(HWND, UINT, WPARAM, LPARAM)$ LRESULT
         -handleMessage(UINT, WPARAM, LPARAM) LRESULT
@@ -94,6 +96,34 @@ classDiagram
         -onAccept() void
     }
 
+    class Warnings {
+        -HINSTANCE instance_
+        -WarningKind kind_
+        -vector~wstring~ paths_
+        -HWND parent_
+        -HWND window_
+        -HWND acceptButton_
+        -bool running_
+        +Warnings(HINSTANCE instance, WarningKind kind, vector~wstring~ paths)
+        +~Warnings()
+        +show(HWND parent) void
+        -registerClass(HINSTANCE instance)$ bool
+        -windowProcedure(HWND, UINT, WPARAM, LPARAM)$ LRESULT
+        -handleMessage(UINT, WPARAM, LPARAM) LRESULT
+        -createControls() bool
+        -showMessageBox() void
+        -selfDestroy() void
+        -getTitle() wstring
+        -getText() wstring
+        -getPathList() wstring
+    }
+
+    class WarningKind {
+        <<enumeration>>
+        InaccessibleReference
+        Recursion
+    }
+
     class RenameRequest {
         <<struct>>
         +size_t entryIndex
@@ -112,12 +142,13 @@ classDiagram
         -wstring sourceRoot_
         -wstring destinationRoot_
         -vector~CopyEntry~ entries_
+        -vector~wstring~ inaccessible_
         +Copier()
         +setDirectories(wstring sourceRoot, wstring destinationRoot) void
         +checkDirectories() DirectoryResult
-        +load(atomic_bool* cancellation = nullptr) bool
+        +load(atomic_bool* cancellation = nullptr, RecursionCallback onRecursion = nullptr) bool
         +check(size_t index) bool
-        +copy(size_t index, atomic_bool* cancellation = nullptr) bool
+        +copy(size_t index, atomic_bool* cancellation = nullptr) CopyResult
         +rename(size_t index, wstring newName) RenameResult
         +skip(size_t index) void
         +getEntryCount() size_t
@@ -129,8 +160,9 @@ classDiagram
         +getDestinationRoot() wstring
         +isSizeApproved() bool
         +getTempSize() size_t
+        +getInaccessiblePaths() vector~wstring~
         -getPathLengthLimit(size_t index) size_t
-        -scanDirectory(wstring relativePath, atomic_bool* cancellation) bool
+        -scanDirectory(wstring relativePath, atomic_bool* cancellation, RecursionCallback onRecursion) bool
         -getFullSourcePath(wstring relativePath) wstring
         -normalizePath(wstring path)$ wstring
         -isValidName(wstring name)$ bool
@@ -155,6 +187,13 @@ classDiagram
         DestinationUnavailable
     }
 
+    class CopyResult {
+        <<enumeration>>
+        Copied
+        Failed
+        Inaccessible
+    }
+
     class DirectoryResult {
         <<enumeration>>
         Ok
@@ -173,6 +212,7 @@ classDiagram
         +WM_APP_WORKER_DONE$ UINT
         +WORKER_POLL_TIMER$ UINT_PTR
         +WM_APP_CURRENT_ENTRY$ UINT
+        +WM_APP_RECURSION_FOUND$ UINT
         +equalsIgnoreCase(wstring first, wstring second) bool
         +joinPath(wstring base, wstring part) wstring
         +dispatchWindowMessage~Owner~(HWND, UINT, WPARAM, LPARAM, windowMember, handler) LRESULT
@@ -187,14 +227,18 @@ classDiagram
     Window "1" *-- "0..1" Decision : composed of
     Decision ..> Controller : calls rename()
     Decision ..> RenameRequest : shows
+    Window ..> Warnings : creates while warning
+    Warnings ..> WarningKind : shows
     Controller ..> RenameRequest : creates
     Copier "1" *-- "*" CopyEntry : entries_
     Copier ..> RenameResult : returns
     Copier ..> DirectoryResult : returns
+    Copier ..> CopyResult : returns
     Decision ..> RenameResult : reads
     Window ..> DirectoryResult : reads
     Window ..> Common : uses
     Decision ..> Common : uses
+    Warnings ..> Common : uses
     Controller ..> Common : uses
     Copier ..> Common : uses
 
@@ -207,8 +251,8 @@ The code follows the Model-View-Controller pattern:
 
 | Layer | Classes | Job |
 |---|---|---|
-| Model | `Copier`, `CopyEntry`, `RenameResult`, `DirectoryResult` | File system rules and data: directory checks, scanning, path limits, renames and copies. It does not know about windows. |
-| View | `Window`, `Decision`, `RenameRequest` | Controls, user-visible texts and messages. They pass every user action to the `Controller` and never call the `Copier`. |
+| Model | `Copier`, `CopyEntry`, `CopyResult`, `RenameResult`, `DirectoryResult` | File system rules and data: directory checks, scanning, path limits, renames and copies. It does not know about windows. |
+| View | `Window`, `Decision`, `Warnings`, `RenameRequest` | Controls, user-visible texts and messages. They pass every user action to the `Controller` and never call the `Copier`. |
 | Controller | `Controller` | Reads the input from the `Window`, calls the `Copier`, runs the copy thread, handles cancellation and tells the views what to show. |
 
 - **Controller** owns the `Copier` and the `Window`. `main.cpp` creates only the `Controller`.
@@ -217,6 +261,14 @@ The code follows the Model-View-Controller pattern:
 - **Copier** stores the scanned files and directories as `CopyEntry` items, in pre-order (a directory always comes before its content).
 - `Copier::checkDirectories()` resolves existing directory aliases and rejects empty paths, a missing source, an unavailable destination, and a destination equal to or inside the source. `load()` repeats this validation before creating the destination.
 - Scanning uses an explicit stack and closes each directory search before processing its children.
+- References (junctions and symbolic links) to the source volume are scanned like real directories
+  and files. A reference to another volume or to a missing target, and a OneDrive directory that
+  can not be read, are listed by `getInaccessiblePaths()` and not copied. A reference to a directory
+  that contains it calls the `RecursionCallback` and is not copied. OneDrive files are copied
+  normally; `copy()` returns `CopyResult::Inaccessible` when one of them can not be read.
+- **Warnings** is a modal window with a text, a list of paths and an *Aceptar* button. The
+  `Controller` opens it with `WarningKind::Recursion` during the scan (`SendMessage(WM_APP_RECURSION_FOUND)`),
+  and the `Window` opens it with `WarningKind::InaccessibleReference` before the copy summary.
 - `Controller::WorkerResult` stores success, failed and skipped counts. The UI reads it only after observing thread termination. A timer established before worker creation provides completion recovery if the notification is lost.
 - A failed or cancelled scan discards partial entries and stops the operation before files are copied. Existing destination paths must be directories, and existing files are never overwritten.
 - `Controller` shares an atomic cancellation flag with `Copier`. Scanning checks it between entries, and `CopyFileExW` checks it through its progress callback.

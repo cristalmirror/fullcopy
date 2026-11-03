@@ -19,14 +19,32 @@ Written in C++17 with the Win32 API. It is cross-compiled from Linux with MinGW-
    - Write a new name and press **Accept** (or Enter). The copy continues with the new name.
      If the item is a directory, all its content is copied under the new name.
    - Closing the window (X or Escape) skips that item and all its content.
-5. When the copy finishes, a summary shows how many items were skipped or failed.
-6. Press **Accept** in the main window to close the application.
+5. If the source contains a junction that points to a directory that contains it, the **Recursion**
+   window appears during the scan. Press **Aceptar** to ignore it, and the scan continues.
+6. When the copy finishes, the **Referencia Inaccesible** window lists the files and directories that
+   could not be read (if there are any), and then a summary shows how many items were skipped,
+   failed, inaccessible or ignored.
+7. Press **Accept** in the main window to close the application.
 
 Existing destination files are never overwritten. A rename that would use an existing destination
 name is rejected; other existing files are reported as copy failures. If any source directory cannot
-be scanned, the operation stops before copying files. Destination directories created while preparing
+be scanned, the operation stops before copying files, except for the references and OneDrive
+directories described below. Destination directories created while preparing
 the operation may remain. Closing the main window requests cancellation during scanning or copying;
 the current partially copied file is removed when cancellation is processed.
+
+### Junctions, symbolic links and OneDrive
+
+- A junction or symbolic link whose target is on the **same volume** as the source directory is
+  copied as a real directory or file, with all its content.
+- A junction or symbolic link whose target is on **another volume**, is missing or can not be read is
+  not copied (nothing is created in the destination). It is listed in the **Referencia Inaccesible**
+  window when the copy finishes. With a network source, no reference is followed.
+- A junction that points to a directory that contains it (for example, `Application Data` inside
+  `AppData\Local`) would be scanned forever. The scan shows the **Recursion** window and ignores it.
+- OneDrive files and directories are copied like normal ones. Files that are only in the cloud are
+  downloaded by OneDrive; the ones it can not provide (no connection, OneDrive not running, ...) are
+  listed in the **Referencia Inaccesible** window.
 
 ### Limits checked
 
@@ -123,7 +141,7 @@ The code follows the Model-View-Controller (MVC) pattern:
 | Layer | Files | Job |
 |---|---|---|
 | Model | `Copier.hpp`, `Copier.cpp` | Checks the directories, scans the source, checks the path lengths, renames and copies. It does not know about windows. |
-| View | `Window.hpp`, `Window.cpp`, `Decision.hpp`, `Decision.cpp` | Controls, texts and messages for the user. Every user action goes to the `Controller`; the views never call the `Copier`. |
+| View | `Window.hpp`, `Window.cpp`, `Decision.hpp`, `Decision.cpp`, `Warnings.hpp`, `Warnings.cpp` | Controls, texts and messages for the user. Every user action goes to the `Controller`; the views never call the `Copier`. |
 | Controller | `Controller.hpp`, `Controller.cpp` | Reads the input from the views, uses the `Copier` on a separate copy thread, handles cancellation and tells the views what to show. |
 
 `main.cpp` creates only the `Controller`, which creates the `Copier` and the main `Window`.

@@ -7,6 +7,31 @@ and this project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- Junctions and directory symbolic links were copied as empty directories without any warning.
+  A reference to the same volume as the source is now copied as a real directory or file.
+- OneDrive directories were copied as empty directories, because they are reparse points too.
+  They are now scanned and copied like normal directories.
+
+### Added
+
+- `Warnings` window (`include/Warnings.hpp`, `src/Warnings.cpp`) with a text, a list of paths and an
+  *Aceptar* button.
+- **Referencia Inaccesible** warning after the copy: references to another volume, references that can
+  not be followed and OneDrive items that can not be read are listed and not copied.
+- **Recursion** warning during the scan: a reference to a directory that contains it is ignored
+  instead of being scanned forever.
+- Integration tests for junctions: same-volume copy, recursion, a missing target and two junctions
+  that point to each other.
+
+### Changed
+
+- `Copier::copy()` returns a `CopyResult` (`Copied`, `Failed`, `Inaccessible`) instead of `bool`.
+- `Copier::load()` accepts an optional `RecursionCallback`, and `Copier::getInaccessiblePaths()` lists
+  what the scan could not read.
+- The copy summary also counts the inaccessible references and the ignored recursive references.
+
 ## [1.0.2] - 2026-11-02
 
 ### Fixed
