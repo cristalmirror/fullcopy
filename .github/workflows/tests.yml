@@ -1,7 +1,11 @@
 name: Windows stability tests
+# build.yml calls this workflow for main, the pull requests to main and the version tags, so the
+# executable is only built and released after the tests pass. The push trigger covers the
+# other branches.
 on:
   push:
-  pull_request:
+    branches-ignore: [main]
+  workflow_call:
   workflow_dispatch:
 permissions:
   contents: read

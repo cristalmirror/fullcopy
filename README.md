@@ -106,8 +106,11 @@ make
 ## Testing
 
 The Windows CI job (`.github/workflows/tests.yml`) builds everything with warnings treated as
-errors and runs the integration tests of `Copier` and the UI tests of the windows. To run them in a
-Windows MSYS2 shell, follow [docs/testing.md](docs/testing.md).
+errors and runs the integration tests of `Copier`, the UI tests of the windows and the manual test
+data tool, and checks the junctions it creates. It runs on every push. For `main`, the pull
+requests to `main` and the version tags, `.github/workflows/build.yml` runs it first and only
+builds and releases the executable when it passes. To run the tests in a Windows MSYS2 shell,
+follow [docs/testing.md](docs/testing.md).
 
 For the manual checks, build the test data tool and run it on Windows with a new directory:
 

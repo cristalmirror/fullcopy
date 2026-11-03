@@ -3,8 +3,13 @@
 Automated checks run on a real Windows GitHub Actions runner. They build the
 application with warnings treated as errors and execute filesystem integration
 tests against `Copier` and UI tests against the `Controller` and its windows. They
-also build and run the tool that creates the manual test data. No application
-behavior is changed by this test suite.
+also build and run the tool that creates the manual test data, and check that every
+junction it creates exists and points to its target. No application behavior is changed
+by this test suite.
+
+`.github/workflows/tests.yml` runs on every push to a branch other than `main`.
+`.github/workflows/build.yml` calls it for `main`, the pull requests to `main` and the
+version tags, and only builds and releases the executable after it passes.
 
 ## Automated coverage
 

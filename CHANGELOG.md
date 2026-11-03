@@ -32,6 +32,8 @@ and this project uses [Semantic Versioning](https://semver.org/).
 
 - `Copier::copy()` returns a `CopyResult` (`Copied`, `Failed`, `Inaccessible`) instead of `bool`.
 - `generate_manual_tree` only builds for Windows; its Linux implementation was removed.
+- `build.yml` runs the Windows tests (`tests.yml`) first, and only builds and releases the
+  executable when they pass.
 - `Copier::load()` accepts an optional `RecursionCallback`, and `Copier::getInaccessiblePaths()` lists
   what the scan could not read.
 - The copy summary also counts the inaccessible references and the ignored recursive references.
