@@ -8,9 +8,11 @@
 #include <stdexcept>
 #include <string>
 #include <utility>
+#include <vector>
 
 namespace fs = std::filesystem;
 using fullcopy::Copier;
+using fullcopy::CopyResult;
 using fullcopy::DirectoryResult;
 using fullcopy::RenameResult;
 
@@ -77,10 +79,41 @@ std::wstring forwardSlashes(std::wstring text) {
     return text;
 }
 
+// Creates a junction with mklink /J, and removes the junction (not its target) when it goes out
+// of scope, so the fixture cleanup never walks through it. Declare it after the Fixture.
+class Junction {
+public:
+    Junction(const fs::path &link, const fs::path &target) : link_(link) {
+        std::wstring command = L"cmd.exe /d /c mklink /J \"" + link.wstring() + L"\" \""
+                               + target.wstring() + L"\" >nul";
+        STARTUPINFOW startup{};
+        startup.cb = sizeof(startup);
+        PROCESS_INFORMATION process{};
+        require(CreateProcessW(nullptr, command.data(), nullptr, nullptr, FALSE, CREATE_NO_WINDOW,
+                               nullptr, nullptr, &startup, &process) != FALSE, "mklink could not start");
+        WaitForSingleObject(process.hProcess, INFINITE);
+        DWORD exitCode = 1;
+        GetExitCodeProcess(process.hProcess, &exitCode);
+        CloseHandle(process.hThread);
+        CloseHandle(process.hProcess);
+        require(exitCode == 0, "mklink /J failed");
+    }
+
+    ~Junction() {
+        RemoveDirectoryW(link_.c_str());
+    }
+
+    Junction(const Junction&) = delete;
+    Junction &operator=(const Junction&) = delete;
+
+private:
+    fs::path link_;
+};
+
 void copyAll(Copier &copier) {
     for (std::size_t i = 0; i < copier.getEntryCount(); ++i) {
         require(copier.check(i), "Unexpected path rejection");
-        require(copier.copy(i), "Copy failed");
+        require(copier.copy(i) == CopyResult::Copied, "Copy failed");
     }
 }
 
@@ -154,7 +187,7 @@ void boundaries() {
         require(copier.rename(index, std::wstring(maximum, L'x')) == RenameResult::Ok,
                 "Boundary name rejected");
         require(copier.check(index), "Boundary path rejected");
-        require(copier.copy(index), "Boundary copy failed");
+        require(copier.copy(index) == CopyResult::Copied, "Boundary copy failed");
     }
 }
 
@@ -173,7 +206,7 @@ void failuresAndEmptySource() {
     write(f.source / L"vanishing", "data");
     require(copier.load(), "Reload failed");
     fs::remove(f.source / L"vanishing");
-    require(!copier.copy(find(copier, L"vanishing")), "Missing file copy reported success");
+    require(copier.copy(find(copier, L"vanishing")) == CopyResult::Failed, "Missing file copy reported success");
 }
 
 void directoryChecks() {
@@ -261,6 +294,55 @@ void deepScanAndCancellation() {
     require(released, "Deep scan retained search handles");
 }
 
+// A junction to the same volume is copied as a real directory; a junction to the source
+// itself and a junction whose target is gone are not copied and are reported.
+void junctions() {
+    Fixture f;
+    fs::create_directory(f.root / L"target");
+    write(f.root / L"target" / L"inside", "inside");
+    const Junction sameVolume(f.source / L"link", f.root / L"target");
+    const Junction loop(f.source / L"loop", f.source);
+    fs::create_directory(f.root / L"gone");
+    const Junction broken(f.source / L"broken", f.root / L"gone");
+    fs::remove(f.root / L"gone");
+
+    std::vector<std::wstring> recursions;
+    Copier copier;
+    copier.setDirectories(f.source.wstring(), f.destination.wstring());
+    require(copier.load(nullptr, [&recursions](const std::wstring &path) { recursions.push_back(path); }),
+            "Load failed");
+    require(recursions == std::vector<std::wstring>{L"loop"}, "Recursive junction not reported");
+    require(copier.getInaccessiblePaths() == std::vector<std::wstring>{L"broken"},
+            "Broken junction not reported");
+    require(copier.getEntryCount() == 2, "Unexpected scan count");
+    copyAll(copier);
+    require(read(f.destination / L"link" / L"inside") == "inside", "Junction content not copied");
+    const DWORD attributes = GetFileAttributesW((f.destination / L"link").c_str());
+    require(attributes != INVALID_FILE_ATTRIBUTES && (attributes & FILE_ATTRIBUTE_REPARSE_POINT) == 0,
+            "Junction copied as a reference");
+    require(!fs::exists(f.destination / L"loop") && !fs::exists(f.destination / L"broken"),
+            "Ignored junction created in the destination");
+}
+
+// Two junctions that point to each other's directory end the scan instead of looping.
+void mutualJunctions() {
+    Fixture f;
+    fs::create_directory(f.source / L"a");
+    fs::create_directory(f.source / L"b");
+    const Junction toB(f.source / L"a" / L"toB", f.source / L"b");
+    const Junction toA(f.source / L"b" / L"toA", f.source / L"a");
+
+    std::vector<std::wstring> recursions;
+    Copier copier;
+    copier.setDirectories(f.source.wstring(), f.destination.wstring());
+    require(copier.load(nullptr, [&recursions](const std::wstring &path) { recursions.push_back(path); }),
+            "Load failed");
+    require(recursions == std::vector<std::wstring>{L"a\\toB\\toA", L"b\\toA\\toB"},
+            "Mutual junctions not reported");
+    require(copier.getEntryCount() == 4, "Unexpected scan count");
+    require(copier.getInaccessiblePaths().empty(), "Unexpected inaccessible reference");
+}
+
 int main() {
     unsigned failures = 0;
     const struct { const char *name; void (*run)(); } tests[] = {
@@ -269,7 +351,9 @@ int main() {
         {"file and directory path boundaries", boundaries},
         {"failures and empty source", failuresAndEmptySource},
         {"directory checks before a copy", directoryChecks},
-        {"deep scan, cancellation and handle release", deepScanAndCancellation}
+        {"deep scan, cancellation and handle release", deepScanAndCancellation},
+        {"junctions: real copy, recursion and broken target", junctions},
+        {"junctions that point to each other", mutualJunctions}
     };
     for (const auto &test : tests) {
         try {

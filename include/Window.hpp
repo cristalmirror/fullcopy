@@ -6,8 +6,10 @@
 #include <cstddef>
 #include <memory>
 #include <string>
+#include <vector>
 
 #include "Decision.hpp"
+#include "Warnings.hpp"
 
 namespace fullcopy {
     class Controller;
@@ -40,6 +42,9 @@ namespace fullcopy {
         // Opens the Decision window and waits for it. Returns true if the entry was renamed.
         bool askNewName(const RenameRequest &request);
 
+        // Opens the Warnings window with a list of paths and waits until the user accepts it.
+        void showWarning(WarningKind kind, const std::vector<std::wstring> &paths);
+
         void updateProgressBar(int percentage);
         void setCurrentPath(const std::wstring &path);
 
@@ -48,7 +53,8 @@ namespace fullcopy {
         void showCopyStarted();
         void showStartFailed();
         void showCancelling();
-        void showCopyFinished(std::size_t failed, std::size_t skipped);
+        void showCopyFinished(std::size_t failed, std::size_t skipped, std::size_t recursions,
+                              const std::vector<std::wstring> &inaccessible);
         void showCopyFailed();
 
     private:

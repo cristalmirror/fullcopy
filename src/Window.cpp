@@ -156,6 +156,10 @@ namespace fullcopy {
         case WM_APP_RENAME_REQUEST:
             return controller_.onRenameRequest(static_cast<std::size_t>(wParam)) ? TRUE : FALSE;
 
+        case WM_APP_RECURSION_FOUND:
+            controller_.onRecursionFound(*reinterpret_cast<const std::wstring*>(lParam));
+            return 0;
+
         case WM_APP_WORKER_DONE:
             controller_.pollWorker();
             return 0;
@@ -374,6 +378,12 @@ namespace fullcopy {
         return renamed;
     }
 
+    // Opens the Warnings window and waits until the user accepts it.
+    void Window::showWarning(WarningKind kind, const std::vector<std::wstring> &paths) {
+        Warnings warnings(instance_, kind, paths);
+        warnings.show(window_);
+    }
+
     // Shows the path being copied under the progress bar.
     void Window::setCurrentPath(const std::wstring &path) {
         SetWindowTextW(pathLabel_, path.c_str());
@@ -421,10 +431,15 @@ namespace fullcopy {
         setStatus(L"Cancelling...");
     }
 
-    // Enables the controls again and shows a summary of the copy.
-    void Window::showCopyFinished(std::size_t failed, std::size_t skipped) {
+    // Enables the controls again, lists the inaccessible references and shows a summary of the copy.
+    void Window::showCopyFinished(std::size_t failed, std::size_t skipped, std::size_t recursions,
+                                  const std::vector<std::wstring> &inaccessible) {
         restoreControls();
         setStatus(L"Finished.");
+
+        if (!inaccessible.empty()) {
+            showWarning(WarningKind::InaccessibleReference, inaccessible);
+        }
 
         // Add the skipped and the failed items to the summary, when there are any.
         std::wstring text = L"The copy has finished.";
@@ -435,9 +450,17 @@ namespace fullcopy {
         if (failed > 0) {
             text += L"\n\nItems that could not be copied because of an error: " + std::to_wstring(failed) + L".";
         }
+        if (!inaccessible.empty()) {
+            text += L"\n\nInaccessible references that were not copied: "
+                 + std::to_wstring(inaccessible.size()) + L".";
+        }
+        if (recursions > 0) {
+            text += L"\n\nRecursive references that were ignored: " + std::to_wstring(recursions) + L".";
+        }
 
         // Warning icon if something was not copied.
-        const UINT icon = (failed > 0 || skipped > 0) ? MB_ICONWARNING : MB_ICONINFORMATION;
+        const bool incomplete = failed > 0 || skipped > 0 || recursions > 0 || !inaccessible.empty();
+        const UINT icon = incomplete ? MB_ICONWARNING : MB_ICONINFORMATION;
         MessageBoxW(window_, text.c_str(), L"FullCopy", MB_OK | icon);
     }
 

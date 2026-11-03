@@ -6,6 +6,7 @@
 #include <atomic>
 #include <cstddef>
 #include <string>
+#include <vector>
 
 #include "Copier.hpp"
 #include "Window.hpp"
@@ -34,6 +35,7 @@ namespace fullcopy {
         // Messages from the copy thread, delivered by the Window on the main thread.
         void onProgress(int percentage);
         bool onRenameRequest(std::size_t entryIndex);
+        void onRecursionFound(const std::wstring &relativePath);
         void onCurrentEntry(std::size_t entryIndex);
         void pollWorker();
 
@@ -47,6 +49,8 @@ namespace fullcopy {
             bool succeeded = false;
             std::size_t failed = 0;
             std::size_t skipped = 0;
+            std::size_t recursions = 0;             // Recursive references ignored during the scan.
+            std::vector<std::wstring> inaccessible; // Full source paths that could not be read.
         };
         WorkerResult runCopy();
 

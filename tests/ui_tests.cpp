@@ -37,6 +37,7 @@ using fullcopy::ID_STATUS_LABEL;
 // Window classes, and the id of the text inside a standard message box.
 const wchar_t *const MAIN_CLASS = L"FullCopyMainWindow";
 const wchar_t *const DECISION_CLASS = L"FullCopyDecisionWindow";
+const wchar_t *const WARNINGS_CLASS = L"FullCopyWarningsWindow";
 const wchar_t *const MESSAGE_BOX_CLASS = L"#32770";
 const int MESSAGE_BOX_TEXT_ID = 0xFFFF;
 
@@ -330,7 +331,7 @@ public:
                 if (name == MESSAGE_BOX_CLASS) {
                     pressMessageBoxButton(window);
                     PostMessageW(window, WM_CLOSE, 0, 0);
-                } else if (name == DECISION_CLASS) {
+                } else if (name == DECISION_CLASS || name == WARNINGS_CLASS) {
                     PostMessageW(window, WM_COMMAND, IDCANCEL, 0);
                 } else if (name == MAIN_CLASS) {
                     mainOpen = true;
@@ -388,6 +389,7 @@ void unregisterClasses() {
     const HINSTANCE instance = GetModuleHandleW(nullptr);
     UnregisterClassW(MAIN_CLASS, instance);
     UnregisterClassW(DECISION_CLASS, instance);
+    UnregisterClassW(WARNINGS_CLASS, instance);
 }
 
 // Suppress the worker notification to exercise completion through the timer alone.

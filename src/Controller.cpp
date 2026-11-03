@@ -1,5 +1,7 @@
 #include "Controller.hpp"
 
+#include <utility>
+
 #include "Common.hpp"
 #include "Decision.hpp"
 
@@ -122,6 +124,17 @@ namespace fullcopy {
         return window_.askNewName(request);
     }
 
+    // The scan found a reference to a directory that contains it. It runs on the main thread
+    // while the scan waits, and the reference is ignored when the user accepts the warning.
+    void Controller::onRecursionFound(const std::wstring &relativePath) {
+        // The user is closing the program: do not open a new window.
+        if (closePending_) {
+            return;
+        }
+
+        window_.showWarning(WarningKind::Recursion, {joinPath(copier_.getSourceRoot(), relativePath)});
+    }
+
     // Shows the full source path of the entry the copy thread is working on.
     void Controller::onCurrentEntry(std::size_t entryIndex) {
         if (entryIndex >= copier_.getEntryCount()) {
@@ -143,7 +156,7 @@ namespace fullcopy {
             return;
         }
         if (result.succeeded) {
-            window_.showCopyFinished(result.failed, result.skipped);
+            window_.showCopyFinished(result.failed, result.skipped, result.recursions, result.inaccessible);
         } else {
             window_.showCopyFailed();
         }
@@ -197,9 +210,23 @@ namespace fullcopy {
         // on the main thread.
         const HWND window = window_.getHandle();
 
-        // 1. Scan the source directory.
-        if (!copier_.load(&cancelRequested_)) {
+        // 1. Scan the source directory. A reference to a directory that contains it is not copied:
+        // SendMessage blocks the scan until the user accepts the Recursion warning.
+        std::size_t recursions = 0;
+        const auto onRecursion = [this, window, &recursions](const std::wstring &relativePath) {
+            ++recursions;
+            if (!cancelRequested_.load()) {
+                SendMessageW(window, WM_APP_RECURSION_FOUND, 0, reinterpret_cast<LPARAM>(&relativePath));
+            }
+        };
+        if (!copier_.load(&cancelRequested_, onRecursion)) {
             return {};
+        }
+
+        // The references that the scan could not read are listed when the copy ends.
+        std::vector<std::wstring> inaccessible;
+        for (const std::wstring &path : copier_.getInaccessiblePaths()) {
+            inaccessible.push_back(joinPath(copier_.getSourceRoot(), path));
         }
 
         // 2. Copy every entry, counting the ones that fail and the ones that are skipped.
@@ -229,9 +256,17 @@ namespace fullcopy {
                 break;
             }
 
-            // Copy the entry. A skipped entry does nothing and counts as done.
-            if (!copier_.copy(i, &cancelRequested_)) {
-                ++failed;
+            // Copy the entry. A skipped entry does nothing and counts as done. A OneDrive file
+            // that can not be read is listed with the inaccessible references.
+            switch (copier_.copy(i, &cancelRequested_)) {
+                case CopyResult::Copied:
+                    break;
+                case CopyResult::Failed:
+                    ++failed;
+                    break;
+                case CopyResult::Inaccessible:
+                    inaccessible.push_back(joinPath(copier_.getSourceRoot(), copier_.getEntry(i).sourcePath));
+                    break;
             }
 
             // Send the progress only when the percentage changes, so the window is not flooded.
@@ -248,7 +283,7 @@ namespace fullcopy {
         }
 
         // Publish the result when the thread ends, including cancellation.
-        return {true, failed, skipped};
+        return {true, failed, skipped, recursions, std::move(inaccessible)};
     }
 
 } // namespace fullcopy

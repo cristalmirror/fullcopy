@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <cwchar>
 #include <filesystem>
+#include <iterator>
 #include <utility>
 
 namespace fullcopy {
@@ -35,6 +36,25 @@ namespace fullcopy {
             HANDLE handle_;
         };
 
+        // Writes the final path of an open handle, with every junction and symbolic link resolved.
+        // volumeFlag is VOLUME_NAME_DOS (C:\...) or VOLUME_NAME_GUID (\\?\Volume{...}\...).
+        bool getFinalPath(HANDLE handle, DWORD volumeFlag, std::wstring &path) {
+            const DWORD flags = FILE_NAME_NORMALIZED | volumeFlag;
+            const DWORD required = GetFinalPathNameByHandleW(handle, nullptr, 0, flags);
+            if (required == 0) {
+                return false;
+            }
+            std::wstring buffer(static_cast<std::size_t>(required) + 1, L'\0');
+            const DWORD written = GetFinalPathNameByHandleW(handle, buffer.data(),
+                static_cast<DWORD>(buffer.size()), flags);
+            if (written == 0 || written >= buffer.size()) {
+                return false;
+            }
+            buffer.resize(written);
+            path = buffer;
+            return true;
+        }
+
         // Resolve existing ancestors first, including junctions. Missing destination
         // components are appended only after resolving the nearest existing directory.
         bool resolveDirectoryPath(const std::wstring &path, bool allowMissing,
@@ -52,19 +72,11 @@ namespace fullcopy {
                         (info.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) == 0) {
                         return false;
                     }
-                    const DWORD flags = FILE_NAME_NORMALIZED | VOLUME_NAME_DOS;
-                    const DWORD required = GetFinalPathNameByHandleW(handle.get(), nullptr, 0, flags);
-                    if (required == 0) {
+                    std::wstring finalPath;
+                    if (!getFinalPath(handle.get(), VOLUME_NAME_DOS, finalPath)) {
                         return false;
                     }
-                    std::wstring buffer(static_cast<std::size_t>(required) + 1, L'\0');
-                    const DWORD written = GetFinalPathNameByHandleW(handle.get(), buffer.data(),
-                        static_cast<DWORD>(buffer.size()), flags);
-                    if (written == 0 || written >= buffer.size()) {
-                        return false;
-                    }
-                    buffer.resize(written);
-                    fs::path result(buffer);
+                    fs::path result(finalPath);
                     for (auto it = missingParts.rbegin(); it != missingParts.rend(); ++it) {
                         result /= *it;
                     }
@@ -154,6 +166,50 @@ namespace fullcopy {
             return text.size() >= prefix.size() && equalsIgnoreCase(text.substr(0, prefix.size()), prefix);
         }
 
+        // Returns true if the path is the directory itself or something inside it, ignoring case.
+        bool isSameOrInside(const std::wstring &path, const std::wstring &directory) {
+            return equalsIgnoreCase(path, directory) || startsWithIgnoreCase(path, directory + L'\\');
+        }
+
+        // Opens a file or directory following its junctions and symbolic links, and writes the
+        // real path of the target with its volume GUID (\\?\Volume{...}\...) and without the
+        // trailing backslash. Fails if the target is missing, can not be opened, or has no volume
+        // GUID, like a network share.
+        bool getRealPath(const std::wstring &path, std::wstring &realPath) {
+            DirectoryHandle handle(CreateFileW(path.c_str(), FILE_READ_ATTRIBUTES,
+                FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
+                OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nullptr));
+            if (handle.get() == INVALID_HANDLE_VALUE || !getFinalPath(handle.get(), VOLUME_NAME_GUID, realPath)) {
+                return false;
+            }
+            while (!realPath.empty() && realPath.back() == L'\\') {
+                realPath.pop_back();
+            }
+            return true;
+        }
+
+        // Volume part of a real path written by getRealPath(): "\\?\Volume{...}".
+        std::wstring getVolume(const std::wstring &realPath) {
+            const std::size_t end = realPath.find(L'\\', 4);
+            return end == std::wstring::npos ? realPath : realPath.substr(0, end);
+        }
+
+        // Returns true for the errors of OneDrive (and other cloud) files that can not be read
+        // now: the provider is not running, there is no network, the request failed, ...
+        bool isCloudError(DWORD error) {
+            static const DWORD CLOUD_ERRORS[] = {
+                ERROR_CLOUD_FILE_SYNC_ROOT_METADATA_CORRUPT, ERROR_CLOUD_FILE_PROVIDER_NOT_RUNNING,
+                ERROR_CLOUD_FILE_METADATA_CORRUPT, ERROR_CLOUD_FILE_NOT_IN_SYNC,
+                ERROR_CLOUD_FILE_VALIDATION_FAILED, ERROR_CLOUD_FILE_AUTHENTICATION_FAILED,
+                ERROR_CLOUD_FILE_INSUFFICIENT_RESOURCES, ERROR_CLOUD_FILE_NETWORK_UNAVAILABLE,
+                ERROR_CLOUD_FILE_UNSUCCESSFUL, ERROR_CLOUD_FILE_IN_USE,
+                ERROR_CLOUD_FILE_REQUEST_ABORTED, ERROR_CLOUD_FILE_PROPERTY_CORRUPT,
+                ERROR_CLOUD_FILE_ACCESS_DENIED, ERROR_CLOUD_FILE_REQUEST_CANCELED,
+                ERROR_CLOUD_FILE_PROVIDER_TERMINATED, ERROR_CLOUD_FILE_REQUEST_TIMEOUT
+            };
+            return std::find(std::begin(CLOUD_ERRORS), std::end(CLOUD_ERRORS), error) != std::end(CLOUD_ERRORS);
+        }
+
     } // namespace
 
     // Starts with no directories and no entries.
@@ -167,6 +223,7 @@ namespace fullcopy {
         sourceRoot_ = normalizePath(sourceRoot);
         destinationRoot_ = normalizePath(destinationRoot);
         entries_.clear();
+        inaccessible_.clear();
     }
 
     // Checks the directories before a copy. The checks run in order and the first
@@ -195,8 +252,9 @@ namespace fullcopy {
     }
 
     // Makes sure the destination exists (it is created if needed) and scans the source directory.
-    bool Copier::load(std::atomic_bool *cancellation) {
+    bool Copier::load(std::atomic_bool *cancellation, const RecursionCallback &onRecursion) {
         entries_.clear();
+        inaccessible_.clear();
         if (checkDirectories() != DirectoryResult::Ok) {
             return false;
         }
@@ -219,8 +277,9 @@ namespace fullcopy {
         }
 
         // Scan from the root. On failure, do not keep a partial list.
-        if (!scanDirectory(L"", cancellation)) {
+        if (!scanDirectory(L"", cancellation, onRecursion)) {
             entries_.clear();
+            inaccessible_.clear();
             return false;
         }
         return true;
@@ -245,16 +304,16 @@ namespace fullcopy {
     }
 
     // Copies one entry: creates the directory, or copies the file without overwriting an
-    // existing one. Returns true for a skipped entry, because there is nothing to do.
-    bool Copier::copy(std::size_t index, std::atomic_bool *cancellation) {
+    // existing one. Returns Copied for a skipped entry, because there is nothing to do.
+    CopyResult Copier::copy(std::size_t index, std::atomic_bool *cancellation) {
         // Do not start a new entry after a cancellation.
         if (cancellation != nullptr && cancellation->load()) {
-            return false;
+            return CopyResult::Failed;
         }
 
         const CopyEntry &entry = entries_.at(index);
         if (entry.skipped) {
-            return true;
+            return CopyResult::Copied;
         }
 
         const std::wstring destination = getFullDestinationPath(index);
@@ -262,23 +321,29 @@ namespace fullcopy {
         if (entry.isDirectory) {
             // A directory that already exists is fine, but a file with the same name is not.
             if (CreateDirectoryW(destination.c_str(), nullptr)) {
-                return true;
+                return CopyResult::Copied;
             }
             const DWORD error = GetLastError();
-            return error == ERROR_ALREADY_EXISTS && isDirectory(destination);
+            return error == ERROR_ALREADY_EXISTS && isDirectory(destination) ? CopyResult::Copied
+                                                                             : CopyResult::Failed;
         }
 
         // Read the source with the long path prefix. COPY_FILE_FAIL_IF_EXISTS never overwrites a file,
         // and copyProgress stops the copy if the user cancels.
         const std::wstring source = getFullSourcePath(entry.sourcePath);
-        return CopyFileExW(
+        if (CopyFileExW(
             source.c_str(),
             destination.c_str(),
             copyProgress,
             cancellation,
             nullptr,
             COPY_FILE_FAIL_IF_EXISTS
-        ) != FALSE;
+        ) != FALSE) {
+            return CopyResult::Copied;
+        }
+
+        // A OneDrive file that can not be downloaded now is reported apart from the other errors.
+        return isCloudError(GetLastError()) ? CopyResult::Inaccessible : CopyResult::Failed;
     }
 
     // Gives a new name to the destination of an entry. It checks the name, its length and the
@@ -418,16 +483,48 @@ namespace fullcopy {
         return tempSize_;
     }
 
+    // Relative source paths that the last scan could not read.
+    const std::vector<std::wstring> &Copier::getInaccessiblePaths() const {
+        return inaccessible_;
+    }
+
     // Iterative depth-first scan: directories precede their contents, and only
     // one search handle is open at a time regardless of tree depth.
-    bool Copier::scanDirectory(const std::wstring &relativePath, std::atomic_bool *cancellation) {
+    // References (junctions and symbolic links) are followed only when they point to the
+    // source volume and not to a directory that contains them.
+    bool Copier::scanDirectory(const std::wstring &relativePath, std::atomic_bool *cancellation,
+                               const RecursionCallback &onRecursion) {
+        // A scanned directory and the one that contains it. realPath has every reference
+        // resolved, so a reference that points back to a scanned directory can be found.
+        struct Ancestor {
+            std::wstring realPath;
+            std::size_t parent;
+        };
         struct Pending {
             std::wstring path;
+            std::wstring realPath;
+            std::size_t parent;  // Index in ancestors of the directory that contains it.
             bool isDirectory;
             bool descend;
             bool addEntry;
+            bool isReference;    // Reached through a reference: a failed read is not fatal.
         };
-        std::vector<Pending> pending{{relativePath, true, true, false}};
+        // A file or directory found in a directory, before deciding what to do with it.
+        struct Found {
+            std::wstring name;
+            DWORD attributes;
+            DWORD reparseTag;
+        };
+        const std::size_t NO_PARENT = static_cast<std::size_t>(-1);
+
+        // Only references to the volume of the source are followed. A network source has no
+        // volume GUID, so none of its references is followed.
+        std::wstring rootRealPath;
+        const std::wstring sourceVolume = getRealPath(getFullSourcePath(relativePath), rootRealPath)
+                                          ? getVolume(rootRealPath) : std::wstring();
+
+        std::vector<Ancestor> ancestors;
+        std::vector<Pending> pending{{relativePath, rootRealPath, NO_PARENT, true, true, false, false}};
         const auto cancelled = [cancellation]() {
             return cancellation != nullptr && cancellation->load();
         };
@@ -443,7 +540,19 @@ namespace fullcopy {
             if (!item.descend) {
                 continue;
             }
-            std::vector<Pending> children;
+
+            // A directory reached through a reference, or a OneDrive directory that can not be
+            // read now, is not copied and the scan goes on. Its entry is the last one added.
+            const auto skipUnreadable = [this, &item](DWORD error) {
+                if (!item.addEntry || !(item.isReference || isCloudError(error))) {
+                    return false;
+                }
+                entries_.pop_back();
+                inaccessible_.push_back(item.path);
+                return true;
+            };
+
+            std::vector<Found> found;
             {
                 const std::wstring directory = getFullSourcePath(item.path);
                 const std::wstring pattern = joinPath(directory, L"*");
@@ -453,6 +562,9 @@ namespace fullcopy {
                 if (find == INVALID_HANDLE_VALUE) {
                     const DWORD error = GetLastError();
                     if (error == ERROR_FILE_NOT_FOUND && isDirectory(directory)) {
+                        continue;
+                    }
+                    if (skipUnreadable(error)) {
                         continue;
                     }
                     return false;
@@ -466,14 +578,59 @@ namespace fullcopy {
                     if (name == L"." || name == L"..") {
                         continue;
                     }
-                    const std::wstring child = item.path.empty() ? name : item.path + L'\\' + name;
-                    const bool directoryEntry = (data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
-                    const bool reparse = (data.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) != 0;
-                    children.push_back({child, directoryEntry, directoryEntry && !reparse, true});
+                    // dwReserved0 holds the reparse tag when the entry is a reparse point.
+                    found.push_back({name, data.dwFileAttributes, data.dwReserved0});
                 } while (FindNextFileW(find, &data));
-                if (GetLastError() != ERROR_NO_MORE_FILES) {
+                const DWORD error = GetLastError();
+                if (error != ERROR_NO_MORE_FILES) {
+                    if (skipUnreadable(error)) {
+                        continue;
+                    }
                     return false;
                 }
+            }
+
+            // Remember this directory, so the references inside it can be compared with it.
+            const std::size_t self = ancestors.size();
+            ancestors.push_back({item.realPath, item.parent});
+
+            std::vector<Pending> children;
+            for (const Found &child : found) {
+                const std::wstring path = item.path.empty() ? child.name : item.path + L'\\' + child.name;
+                const bool directoryEntry = (child.attributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
+
+                // Junctions and symbolic links point to another path ("name surrogates"). Other
+                // reparse points, like OneDrive files, are the real file or directory.
+                const bool reference = (child.attributes & FILE_ATTRIBUTE_REPARSE_POINT) != 0
+                                       && IsReparseTagNameSurrogate(child.reparseTag);
+                if (!reference) {
+                    children.push_back({path, item.realPath + L'\\' + child.name, self,
+                                        directoryEntry, directoryEntry, true, false});
+                    continue;
+                }
+
+                // A reference is followed only if its target exists on the source volume.
+                std::wstring target;
+                if (sourceVolume.empty() || !getRealPath(getFullSourcePath(path), target)
+                    || !equalsIgnoreCase(getVolume(target), sourceVolume)) {
+                    inaccessible_.push_back(path);
+                    continue;
+                }
+
+                // A reference to this directory or to one that contains it would be scanned forever.
+                bool recursive = false;
+                for (std::size_t ancestor = self; directoryEntry && !recursive && ancestor != NO_PARENT;
+                     ancestor = ancestors[ancestor].parent) {
+                    recursive = isSameOrInside(ancestors[ancestor].realPath, target);
+                }
+                if (recursive) {
+                    if (onRecursion) {
+                        onRecursion(path);
+                    }
+                    continue;
+                }
+
+                children.push_back({path, target, self, directoryEntry, directoryEntry, true, true});
             }
             for (auto it = children.rbegin(); it != children.rend(); ++it) {
                 pending.push_back(std::move(*it));

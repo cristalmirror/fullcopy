@@ -18,7 +18,9 @@ namespace fullcopy {
         ID_STATUS_LABEL,
         ID_PATH_LABEL,
         ID_DECISION_LABEL,
-        ID_DECISION_TEXT_BOX
+        ID_DECISION_TEXT_BOX,
+        ID_WARNINGS_LABEL,
+        ID_WARNINGS_PATH_LIST
     };
 
     // Messages sent by the copy thread to the main window, which passes them to the Controller.
@@ -27,6 +29,7 @@ namespace fullcopy {
     const UINT WM_APP_WORKER_DONE    = WM_APP + 3; // Worker result is ready after thread termination.
     const UINT_PTR WORKER_POLL_TIMER = 1;
     const UINT WM_APP_CURRENT_ENTRY  = WM_APP + 5; // wParam: index of the entry being copied.
+    const UINT WM_APP_RECURSION_FOUND = WM_APP + 6; // lParam: const std::wstring* with the relative path.
 
     // Returns the system font used for message boxes (shared by every window).
     HFONT getUiFont();
