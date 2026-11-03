@@ -80,6 +80,20 @@ names of 245 to 255 characters, so their destination paths go over the Windows l
 the full path that goes over 260 characters. Every file contains a short message of 100
 characters at most. The tree is written with the `\\?\` prefix.
 
+It also creates a `junctions` directory with one junction for each case of the *Long paths and
+links* check:
+
+| Junction | Target | Expected result |
+|---|---|---|
+| `junctions\same-volume` | `junction-target` | Copied as a real directory with `file.txt`. |
+| `junctions\loop` | The root of the tree | **Recursion** window during the scan. |
+| `junctions\a\to-b` and `junctions\b\to-a` | Each other's directory | **Recursion** window twice, for `a\to-b\to-a` and `b\to-a\to-b`. |
+| `junctions\missing` | `missing-target`, which does not exist | Listed in **Referencia Inaccesible** after the copy. |
+| `junctions\other-volume` | The root of another fixed drive, or `--other-volume DIR` | Listed in **Referencia Inaccesible** after the copy. Not created when there is no other volume. |
+
+The ignored junctions must not exist in the destination. Junctions need an NTFS volume; use
+`--no-junctions` to create the tree without them.
+
 Build it with `make docker-manual-tree` (or `make manual-tree` with MinGW-w64), copy
 `bin/generate_manual_tree.exe` to the Windows test machine, and run it with a path that does not
 exist yet:
@@ -90,11 +104,12 @@ generate_manual_tree.exe C:\fullcopy-source
 
 It prints the seed, how many **Name too long** windows to expect, and the command to delete the
 tree. Run `generate_manual_tree.exe --help` for the options: `--directories`, `--files`,
-`--long-directories`, `--long-files` and `--seed` (the same seed creates the same tree). Write
-the seed in the record of each check, so the same tree can be created again.
+`--long-directories`, `--long-files`, `--seed` (the same seed creates the same tree),
+`--no-junctions` and `--other-volume`. Write the seed in the record of each check, so the same
+tree can be created again.
 
-The tool creates one level of directories with small text files only. Prepare the deeply nested
-tree, the junction loop and the multi-GB file by hand.
+The tool only runs on Windows. It creates one level of directories with small text files only.
+Prepare the deeply nested tree and the multi-GB file by hand.
 
 For memory corruption investigation, repeat the UI and stress cases under Windows
 Application Verifier and full page heap when available. Save diagnostic logs and

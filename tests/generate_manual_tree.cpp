@@ -7,13 +7,19 @@
 // the full path that goes over 260 characters. Every file contains a short message of 100
 // characters at most.
 //
-// On Windows the tree is written with the "\\?\" prefix, so its paths can be longer than 260
-// characters. The tool also builds on Linux, which is useful to check it without Windows.
+// It also creates a "junctions" directory with one junction for each case FullCopy handles: a
+// junction to the same volume (copied as a real directory), junctions that loop (Recursion
+// window) and junctions to a missing target or to another volume (Referencia Inaccesible window).
+//
+// The tree is written with the "\\?\" prefix, so its paths can be longer than 260 characters.
+// The tool only runs on Windows.
 #include <algorithm>
 #include <cctype>
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
+#include <cwchar>
 #include <filesystem>
 #include <iomanip>
 #include <iostream>
@@ -24,15 +30,8 @@
 #include <string>
 #include <vector>
 
-#ifdef _WIN32
 #include <windows.h>
-#else
-#include <cerrno>
-#include <cstring>
-#include <fcntl.h>
-#include <sys/stat.h>
-#include <unistd.h>
-#endif
+#include <winioctl.h>
 
 namespace fs = std::filesystem;
 
@@ -44,10 +43,8 @@ const std::size_t MAX_FILES = 10000;
 const char LETTERS[] = "abcdefghijklmnopqrstuvwxyz0123456789";
 
 // ---------------------------------------------------------------------------------------------
-// File system: the only part that depends on the operating system.
+// File system.
 // ---------------------------------------------------------------------------------------------
-
-#ifdef _WIN32
 
 const char SEPARATOR = '\\';
 const char *const DELETE_NOTE = "To delete the tree (Explorer may fail with paths longer than 260 characters):";
@@ -112,48 +109,110 @@ void writeNewFile(const std::string &path, const std::string &content) {
     }
 }
 
+// rd /s removes a junction without deleting the content of its target.
 std::string deleteCommand(const std::string &root) {
     return "cmd /c rd /s /q \"" + longPath(root) + "\"";
 }
 
-#else
-
-const char SEPARATOR = '/';
-const char *const DELETE_NOTE = "To delete the tree:";
-
-// Linux has no 260 character limit, so paths need no prefix.
-std::string longPath(const std::string &path) {
-    return path;
+// Writes an absolute path in the form a junction stores it: \??\C:\... or \??\UNC\server\share\...
+std::wstring ntPath(const std::wstring &path) {
+    if (path.rfind(L"\\\\", 0) == 0) {
+        return L"\\??\\UNC\\" + path.substr(2);
+    }
+    return L"\\??\\" + path;
 }
 
-void createDirectory(const std::string &path) {
-    if (mkdir(path.c_str(), 0755) != 0) {
-        const int error = errno;
-        throw std::runtime_error("Could not create the directory " + path + ": " + std::strerror(error));
+// Creates a junction at link (a long path) that points to target (an absolute path without the
+// "\\?\" prefix). The target does not need to exist. Junctions need an NTFS volume.
+void createJunction(const std::string &link, const std::string &target) {
+    // Header of the mount point reparse data, followed by both names (see REPARSE_DATA_BUFFER).
+    struct MountPointHeader {
+        DWORD reparseTag;
+        WORD reparseDataLength;
+        WORD reserved;
+        WORD substituteNameOffset;
+        WORD substituteNameLength;
+        WORD printNameOffset;
+        WORD printNameLength;
+    };
+    const std::size_t MAX_REPARSE_DATA = 16 * 1024; // MAXIMUM_REPARSE_DATA_BUFFER_SIZE.
+
+    const std::wstring printName = widen(target);
+    const std::wstring substituteName = ntPath(printName);
+    const std::size_t namesSize = (substituteName.size() + 1 + printName.size() + 1) * sizeof(wchar_t);
+    const std::size_t totalSize = sizeof(MountPointHeader) + namesSize;
+    if (totalSize > MAX_REPARSE_DATA) {
+        throw std::runtime_error("The junction target is too long: " + target);
+    }
+
+    MountPointHeader header{};
+    header.reparseTag = IO_REPARSE_TAG_MOUNT_POINT;
+    header.reparseDataLength = static_cast<WORD>(totalSize - 8); // Everything after the first 8 bytes.
+    header.substituteNameOffset = 0;
+    header.substituteNameLength = static_cast<WORD>(substituteName.size() * sizeof(wchar_t));
+    header.printNameOffset = static_cast<WORD>(header.substituteNameLength + sizeof(wchar_t));
+    header.printNameLength = static_cast<WORD>(printName.size() * sizeof(wchar_t));
+
+    std::vector<char> buffer(totalSize, 0);
+    std::memcpy(buffer.data(), &header, sizeof(header));
+    std::memcpy(buffer.data() + sizeof(header), substituteName.c_str(), header.substituteNameLength);
+    std::memcpy(buffer.data() + sizeof(header) + header.printNameOffset, printName.c_str(), header.printNameLength);
+
+    // A junction is an empty directory with the reparse data.
+    createDirectory(link);
+    const HANDLE directory = CreateFileW(widen(link).c_str(), GENERIC_WRITE, 0, nullptr, OPEN_EXISTING,
+                                         FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
+    if (directory == INVALID_HANDLE_VALUE) {
+        const DWORD error = GetLastError();
+        RemoveDirectoryW(widen(link).c_str());
+        throw std::runtime_error("Could not open the junction " + link + " (error " + std::to_string(error) + ")");
+    }
+    DWORD returned = 0;
+    const BOOL ok = DeviceIoControl(directory, FSCTL_SET_REPARSE_POINT, buffer.data(),
+                                    static_cast<DWORD>(buffer.size()), nullptr, 0, &returned, nullptr);
+    const DWORD error = GetLastError();
+    CloseHandle(directory);
+    if (!ok) {
+        RemoveDirectoryW(widen(link).c_str());
+        throw std::runtime_error("Could not create the junction " + link + " (error " + std::to_string(error)
+                                 + "). Junctions need an NTFS volume; use --no-junctions to create the tree without them");
     }
 }
 
-// Creates a new file with the content. It fails if the file already exists.
-void writeNewFile(const std::string &path, const std::string &content) {
-    const int file = open(path.c_str(), O_WRONLY | O_CREAT | O_EXCL, 0644);
-    if (file < 0) {
-        const int error = errno;
-        throw std::runtime_error("Could not create the file " + path + ": " + std::strerror(error));
+// Returns the volume GUID path (\\?\Volume{...}\) of the volume that holds the path, or an empty
+// text if it can not be found. The path does not need to exist.
+std::wstring volumeOf(const std::string &path) {
+    wchar_t mountPoint[MAX_PATH + 1] = {};
+    wchar_t volume[MAX_PATH + 1] = {};
+    if (!GetVolumePathNameW(widen(path).c_str(), mountPoint, MAX_PATH + 1)
+        || !GetVolumeNameForVolumeMountPointW(mountPoint, volume, MAX_PATH + 1)) {
+        return std::wstring();
     }
-
-    const ssize_t written = write(file, content.data(), content.size());
-    const int error = errno;
-    close(file);
-    if (written < 0 || static_cast<std::size_t>(written) != content.size()) {
-        throw std::runtime_error("Could not write the file " + path + ": " + std::strerror(error));
-    }
+    return volume;
 }
 
-std::string deleteCommand(const std::string &root) {
-    return "rm -rf '" + root + "'";
+// Returns the root of a local fixed drive on another volume than the path ("D:\"), or an
+// empty text if there is none.
+std::string findOtherVolume(const std::string &path) {
+    const std::wstring volume = volumeOf(path);
+    wchar_t drives[512] = {};
+    const DWORD length = GetLogicalDriveStringsW(511, drives);
+    if (volume.empty() || length == 0 || length > 511) {
+        return std::string();
+    }
+    for (const wchar_t *drive = drives; *drive != L'\0'; drive += std::wcslen(drive) + 1) {
+        if (GetDriveTypeW(drive) != DRIVE_FIXED) {
+            continue;
+        }
+        const std::string root = narrow(drive);
+        const std::wstring other = volumeOf(root);
+        if (!other.empty() && other != volume) {
+            return root;
+        }
+    }
+    return std::string();
 }
 
-#endif
 
 // ---------------------------------------------------------------------------------------------
 // Command line.
@@ -168,6 +227,8 @@ struct Options {
     double longFilePercent = 0.2;
     bool hasSeed = false;
     std::uint32_t seed = 0;
+    bool junctions = true;
+    std::string otherVolume; // Target of the other-volume junction. Empty: found automatically.
     bool help = false;
 };
 
@@ -190,10 +251,17 @@ void printUsage(std::ostream &out) {
            "  --long-directories P   Chance, in percent, that a directory gets a long name (default 20).\n"
            "  --long-files P         Chance, in percent, that a file gets a long name (default 0.2).\n"
            "  --seed N               Seed of the random generator. The same seed creates the same tree.\n"
+           "  --no-junctions         Does not create the junctions directory.\n"
+           "  --other-volume DIR     Existing directory on another volume, target of the junction\n"
+           "                         junctions\\other-volume. By default, the root of another fixed drive.\n"
            "  --help                 Shows this help.\n"
            "\n"
            "When a chance is above 0, at least one directory and one file in a directory with a\n"
-           "normal name get a long name.\n";
+           "normal name get a long name.\n"
+           "\n"
+           "The junctions directory has one junction for each case FullCopy handles: one copied as\n"
+           "a real directory, three that open the Recursion window and two (one if there is no other\n"
+           "volume) listed in the Referencia Inaccesible window. Junctions need an NTFS volume.\n";
 }
 
 // Reads a whole number from minimum to maximum. Signs, spaces and other text are rejected.
@@ -247,6 +315,11 @@ Options parseOptions(const std::vector<std::string> &arguments) {
             return options;
         }
 
+        if (argument == "--no-junctions") {
+            options.junctions = false;
+            continue;
+        }
+
         if (argument.rfind("--", 0) != 0) {
             if (!options.path.empty()) {
                 throw UsageError("Give only one path");
@@ -270,6 +343,8 @@ Options parseOptions(const std::vector<std::string> &arguments) {
         } else if (argument == "--seed") {
             options.seed = static_cast<std::uint32_t>(parseNumber(argument, value, 0, std::numeric_limits<std::uint32_t>::max()));
             options.hasSeed = true;
+        } else if (argument == "--other-volume") {
+            options.otherVolume = value;
         } else {
             throw UsageError("Unknown option " + argument);
         }
@@ -277,6 +352,9 @@ Options parseOptions(const std::vector<std::string> &arguments) {
 
     if (options.path.empty()) {
         throw UsageError("Give the path of the directory to create");
+    }
+    if (!options.junctions && !options.otherVolume.empty()) {
+        throw UsageError("--other-volume can not be used with --no-junctions");
     }
     return options;
 }
@@ -438,7 +516,95 @@ Result createTree(const Options &options, const std::string &root, const Plan &p
     return result;
 }
 
-void printSummary(const Options &options, const std::string &root, const Result &result, double seconds) {
+// One junction of the junctions directory and what FullCopy does with it.
+struct JunctionCase {
+    std::string link;   // Relative to the root.
+    std::string target; // As shown in the summary.
+    std::string expected;
+};
+
+// What the junctions directory contains, for the summary.
+struct JunctionResult {
+    bool created = false;
+    std::size_t recursionWindows = 0;
+    std::size_t inaccessiblePaths = 0;
+    std::vector<JunctionCase> cases;
+};
+
+// Creates the junctions directory, with one junction for each case FullCopy handles:
+//   junctions\same-volume  -> junction-target       copied as a real directory
+//   junctions\loop         -> the root              Recursion window
+//   junctions\a\to-b       -> junctions\b           Recursion window (as junctions\b\to-a\to-b)
+//   junctions\b\to-a       -> junctions\a           Recursion window (as junctions\a\to-b\to-a)
+//   junctions\missing      -> missing-target        listed in Referencia Inaccesible
+//   junctions\other-volume -> another volume        listed in Referencia Inaccesible
+// otherVolume is the target of the last junction; it is not created when otherVolume is empty.
+JunctionResult createJunctions(const std::string &root, const std::string &otherVolume) {
+    JunctionResult result;
+    result.created = true;
+    const std::string base = longPath(root);
+    const std::string directory = base + SEPARATOR + "junctions";
+
+    // Target of the same-volume junction: a normal directory with one file.
+    createDirectory(base + SEPARATOR + "junction-target");
+    writeNewFile(base + SEPARATOR + "junction-target" + SEPARATOR + "file.txt",
+                 "FullCopy manual test. Target of the junction junctions\\same-volume.");
+    createDirectory(directory);
+
+    createJunction(directory + SEPARATOR + "same-volume", root + SEPARATOR + "junction-target");
+    result.cases.push_back({"junctions\\same-volume", "junction-target",
+                            "copied as a real directory with file.txt"});
+
+    createJunction(directory + SEPARATOR + "loop", root);
+    result.cases.push_back({"junctions\\loop", "the root of the tree", "Recursion window"});
+    ++result.recursionWindows;
+
+    // Two junctions that point to each other's directory. Each one is found from the other side.
+    createDirectory(directory + SEPARATOR + "a");
+    createDirectory(directory + SEPARATOR + "b");
+    createJunction(directory + SEPARATOR + "a" + SEPARATOR + "to-b", root + SEPARATOR + "junctions" + SEPARATOR + "b");
+    createJunction(directory + SEPARATOR + "b" + SEPARATOR + "to-a", root + SEPARATOR + "junctions" + SEPARATOR + "a");
+    result.cases.push_back({"junctions\\a\\to-b", "junctions\\b", "Recursion window for junctions\\a\\to-b\\to-a"});
+    result.cases.push_back({"junctions\\b\\to-a", "junctions\\a", "Recursion window for junctions\\b\\to-a\\to-b"});
+    result.recursionWindows += 2;
+
+    // The target is never created.
+    createJunction(directory + SEPARATOR + "missing", root + SEPARATOR + "missing-target");
+    result.cases.push_back({"junctions\\missing", "missing-target (does not exist)", "Referencia Inaccesible"});
+    ++result.inaccessiblePaths;
+
+    if (!otherVolume.empty()) {
+        createJunction(directory + SEPARATOR + "other-volume", otherVolume);
+        result.cases.push_back({"junctions\\other-volume", otherVolume, "Referencia Inaccesible"});
+        ++result.inaccessiblePaths;
+    }
+    return result;
+}
+
+void printJunctions(const JunctionResult &junctions) {
+    if (!junctions.created) {
+        return;
+    }
+    std::cout << "\n"
+              << "Junctions:\n";
+    for (const JunctionCase &junction : junctions.cases) {
+        std::cout << "  " << std::left << std::setw(24) << junction.link << " -> " << std::setw(32)
+                  << junction.target << ' ' << junction.expected << '\n';
+    }
+    if (junctions.inaccessiblePaths < 2) {
+        std::cout << "  No other volume was found, so junctions\\other-volume was not created. Use\n"
+                     "  --other-volume with a directory on another drive to create it.\n";
+    }
+    std::cout << "\n"
+              << "During the scan FullCopy shows the Recursion window " << junctions.recursionWindows
+              << " times. After the copy it\n"
+              << "shows the Referencia Inaccesible window once, with " << junctions.inaccessiblePaths
+              << " paths. The ignored junctions are not created\n"
+              << "in the destination.\n";
+}
+
+void printSummary(const Options &options, const std::string &root, const Result &result,
+                  const JunctionResult &junctions, double seconds) {
     std::cout << "Created " << root << " in " << std::fixed << std::setprecision(1) << seconds
               << " s (seed " << options.seed << ").\n"
               << "  Directories: " << options.directories << ", " << result.longDirectories << " with a long name.\n"
@@ -451,11 +617,26 @@ void printSummary(const Options &options, const std::string &root, const Result 
               << "FullCopy shows the Name too long window at least " << result.expectedWindows
               << " times: once for each long\n"
               << "directory and once for each long file in a directory with a normal name. Renaming a long\n"
-              << "directory instead of skipping it also asks for the long files inside it.\n"
-              << "\n"
+              << "directory instead of skipping it also asks for the long files inside it.\n";
+    printJunctions(junctions);
+    std::cout << "\n"
               << "Run it again with --seed " << options.seed << " to create the same tree.\n"
               << DELETE_NOTE << "\n"
               << "  " << deleteCommand(root) << '\n';
+}
+
+// Checks the directory given with --other-volume and returns it as an absolute path.
+std::string checkOtherVolume(const std::string &path, const std::string &root) {
+    const std::string directory = fs::absolute(fs::u8path(path)).lexically_normal().u8string();
+    const DWORD attributes = GetFileAttributesW(widen(directory).c_str());
+    if (attributes == INVALID_FILE_ATTRIBUTES || (attributes & FILE_ATTRIBUTE_DIRECTORY) == 0) {
+        throw std::runtime_error("--other-volume needs an existing directory: " + directory);
+    }
+    const std::wstring volume = volumeOf(directory);
+    if (volume.empty() || volume == volumeOf(root)) {
+        throw std::runtime_error("--other-volume needs a directory on another volume than " + root + ": " + directory);
+    }
+    return directory;
 }
 
 int run(const std::vector<std::string> &arguments) {
@@ -490,20 +671,25 @@ int run(const std::vector<std::string> &arguments) {
         Random random(options.seed);
         const Plan plan = makePlan(options, random);
 
+        // The other-volume junction needs a directory on another volume than the tree.
+        std::string otherVolume;
+        if (options.junctions) {
+            otherVolume = options.otherVolume.empty() ? findOtherVolume(root) : checkOtherVolume(options.otherVolume, root);
+        }
+
         const auto start = std::chrono::steady_clock::now();
         fs::create_directories(rootPath);
         const Result result = createTree(options, root, plan, random);
+        const JunctionResult junctions = options.junctions ? createJunctions(root, otherVolume) : JunctionResult();
         const std::chrono::duration<double> elapsed = std::chrono::steady_clock::now() - start;
 
-        printSummary(options, root, result, elapsed.count());
+        printSummary(options, root, result, junctions, elapsed.count());
         return 0;
     } catch (const std::exception &error) {
         std::cerr << "\nError: " << error.what() << '\n';
         return 1;
     }
 }
-
-#ifdef _WIN32
 
 // wmain receives the arguments in UTF-16, so paths with any character work.
 int wmain(int argc, wchar_t *argv[]) {
@@ -514,11 +700,3 @@ int wmain(int argc, wchar_t *argv[]) {
     }
     return run(arguments);
 }
-
-#else
-
-int main(int argc, char *argv[]) {
-    return run(std::vector<std::string>(argv + 1, argv + argc));
-}
-
-#endif

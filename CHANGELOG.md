@@ -24,10 +24,14 @@ and this project uses [Semantic Versioning](https://semver.org/).
   instead of being scanned forever.
 - Integration tests for junctions: same-volume copy, recursion, a missing target and two junctions
   that point to each other.
+- `generate_manual_tree` creates a `junctions` directory for the manual checks: a junction to the
+  same volume, a loop, two junctions that point to each other, one to a missing target and one to
+  another volume. New options `--no-junctions` and `--other-volume`. The CI checks the junctions.
 
 ### Changed
 
 - `Copier::copy()` returns a `CopyResult` (`Copied`, `Failed`, `Inaccessible`) instead of `bool`.
+- `generate_manual_tree` only builds for Windows; its Linux implementation was removed.
 - `Copier::load()` accepts an optional `RecursionCallback`, and `Copier::getInaccessiblePaths()` lists
   what the scan could not read.
 - The copy summary also counts the inaccessible references and the ignored recursive references.

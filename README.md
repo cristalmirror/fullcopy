@@ -120,7 +120,8 @@ generate_manual_tree.exe C:\fullcopy-source
 ```
 
 It creates 10 directories with 1000 files each, where some names are long enough to open the
-**Name too long** window. [docs/testing.md](docs/testing.md) lists the manual checks and its options.
+**Name too long** window, and a `junctions` directory that opens the **Recursion** and
+**Referencia Inaccesible** windows. [docs/testing.md](docs/testing.md) lists the manual checks and its options.
 
 ## Project structure
 
