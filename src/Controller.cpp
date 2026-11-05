@@ -1,5 +1,7 @@
 #include "Controller.hpp"
 
+#include <utility>
+
 #include "Common.hpp"
 #include "Decision.hpp"
 
@@ -63,6 +65,14 @@ namespace fullcopy {
             return;
         }
 
+        // Establish the fallback before launching a worker. A failed PostMessage
+        // must not leave the controls disabled or prevent a pending close.
+        if (SetTimer(window_.getHandle(), WORKER_POLL_TIMER, 100, nullptr) == 0) {
+            window_.showStartFailed();
+            return;
+        }
+        workerResult_ = {};
+
         // Clear the state of a previous copy and update the window.
         cancelRequested_.store(false);
         closePending_ = false;
@@ -71,6 +81,7 @@ namespace fullcopy {
         // The copy runs on its own thread, so the window keeps responding.
         workerThread_ = CreateThread(nullptr, 0, copyThread, this, 0, nullptr);
         if (workerThread_ == nullptr) {
+            KillTimer(window_.getHandle(), WORKER_POLL_TIMER);
             window_.showStartFailed();
         }
     }
@@ -113,6 +124,17 @@ namespace fullcopy {
         return window_.askNewName(request);
     }
 
+    // The scan found a reference to a directory that contains it. It runs on the main thread
+    // while the scan waits, and the reference is ignored when the user accepts the warning.
+    void Controller::onRecursionFound(const std::wstring &relativePath) {
+        // The user is closing the program: do not open a new window.
+        if (closePending_) {
+            return;
+        }
+
+        window_.showWarning(WarningKind::Recursion, {joinPath(copier_.getSourceRoot(), relativePath)});
+    }
+
     // Shows the full source path of the entry the copy thread is working on.
     void Controller::onCurrentEntry(std::size_t entryIndex) {
         if (entryIndex >= copier_.getEntryCount()) {
@@ -122,20 +144,22 @@ namespace fullcopy {
         window_.setCurrentPath(joinPath(copier_.getSourceRoot(), copier_.getEntry(entryIndex).sourcePath));
     }
 
-    // The copy thread has ended: shows the summary, unless the window is being closed.
-    void Controller::onCopyFinished(std::size_t failed, std::size_t skipped) {
+    // Called by the notification and timer on the UI thread. Waiting for the
+    // thread to be signalled publishes its result without racing its writes.
+    void Controller::pollWorker() {
+        if (workerThread_ == nullptr ||
+            WaitForSingleObject(workerThread_, 0) != WAIT_OBJECT_0) {
+            return;
+        }
+        const WorkerResult result = workerResult_;
         if (!finishCopy()) {
             return;
         }
-        window_.showCopyFinished(failed, skipped);
-    }
-
-    // The scan or the copy failed: shows the error, unless the window is being closed.
-    void Controller::onCopyFailed() {
-        if (!finishCopy()) {
-            return;
+        if (result.succeeded) {
+            window_.showCopyFinished(result.failed, result.skipped, result.recursions, result.inaccessible);
+        } else {
+            window_.showCopyFailed();
         }
-        window_.showCopyFailed();
     }
 
     // Accept button of the Decision window: applies the new name in the model and returns the result.
@@ -158,6 +182,7 @@ namespace fullcopy {
     void Controller::finishWorker() {
         if (workerThread_ != nullptr) {
             WaitForSingleObject(workerThread_, INFINITE);
+            KillTimer(window_.getHandle(), WORKER_POLL_TIMER);
             CloseHandle(workerThread_);
             workerThread_ = nullptr;
         }
@@ -168,25 +193,40 @@ namespace fullcopy {
     DWORD WINAPI Controller::copyThread(LPVOID parameter) {
         auto *self = static_cast<Controller*>(parameter);
         try {
-            self->runCopy();
-            return 0;
+            self->workerResult_ = self->runCopy();
         } catch (...) {
-            PostMessageW(self->window_.getHandle(), WM_APP_COPY_FAILED, 0, 0);
-            return 1;
+            self->workerResult_ = {};
         }
+        // The timer also observes thread termination if this notification fails
+        // or reaches the UI before the thread has actually returned.
+        PostMessageW(self->window_.getHandle(), WM_APP_WORKER_DONE, 0, 0);
+        return self->workerResult_.succeeded ? 0 : 1;
     }
 
     // Body of the copy thread: scans the source, then checks and copies every entry in order.
     // It talks to the window only with messages, because controls belong to the main thread.
-    void Controller::runCopy() {
+    Controller::WorkerResult Controller::runCopy() {
         // Every message goes to the main window, which passes it to this Controller
         // on the main thread.
         const HWND window = window_.getHandle();
 
-        // 1. Scan the source directory.
-        if (!copier_.load(&cancelRequested_)) {
-            PostMessageW(window, WM_APP_COPY_FAILED, 0, 0);
-            return;
+        // 1. Scan the source directory. A reference to a directory that contains it is not copied:
+        // SendMessage blocks the scan until the user accepts the Recursion warning.
+        std::size_t recursions = 0;
+        const auto onRecursion = [this, window, &recursions](const std::wstring &relativePath) {
+            ++recursions;
+            if (!cancelRequested_.load()) {
+                SendMessageW(window, WM_APP_RECURSION_FOUND, 0, reinterpret_cast<LPARAM>(&relativePath));
+            }
+        };
+        if (!copier_.load(&cancelRequested_, onRecursion)) {
+            return {};
+        }
+
+        // The references that the scan could not read are listed when the copy ends.
+        std::vector<std::wstring> inaccessible;
+        for (const std::wstring &path : copier_.getInaccessiblePaths()) {
+            inaccessible.push_back(joinPath(copier_.getSourceRoot(), path));
         }
 
         // 2. Copy every entry, counting the ones that fail and the ones that are skipped.
@@ -216,9 +256,17 @@ namespace fullcopy {
                 break;
             }
 
-            // Copy the entry. A skipped entry does nothing and counts as done.
-            if (!copier_.copy(i, &cancelRequested_)) {
-                ++failed;
+            // Copy the entry. A skipped entry does nothing and counts as done. A OneDrive file
+            // that can not be read is listed with the inaccessible references.
+            switch (copier_.copy(i, &cancelRequested_)) {
+                case CopyResult::Copied:
+                    break;
+                case CopyResult::Failed:
+                    ++failed;
+                    break;
+                case CopyResult::Inaccessible:
+                    inaccessible.push_back(joinPath(copier_.getSourceRoot(), copier_.getEntry(i).sourcePath));
+                    break;
             }
 
             // Send the progress only when the percentage changes, so the window is not flooded.
@@ -234,8 +282,8 @@ namespace fullcopy {
             PostMessageW(window, WM_APP_PROGRESS, 100, 0);
         }
 
-        // 4. Tell the window that the thread has ended (also after a cancellation).
-        PostMessageW(window, WM_APP_COPY_FINISHED, static_cast<WPARAM>(failed), static_cast<LPARAM>(skipped));
+        // Publish the result when the thread ends, including cancellation.
+        return {true, failed, skipped, recursions, std::move(inaccessible)};
     }
 
 } // namespace fullcopy

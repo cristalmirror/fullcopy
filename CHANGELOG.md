@@ -7,6 +7,55 @@ and this project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- Junctions and directory symbolic links were copied as empty directories without any warning.
+  A reference to the same volume as the source is now copied as a real directory or file.
+- OneDrive directories were copied as empty directories, because they are reparse points too.
+  They are now scanned and copied like normal directories.
+- The **Name too long** window ignored a failed registration of its window class. It now shows an
+  error and the entry is skipped.
+
+### Added
+
+- `Warnings` window (`include/Warnings.hpp`, `src/Warnings.cpp`) with a text, a list of paths and an
+  *Aceptar* button.
+- **Referencia Inaccesible** warning after the copy: references to another volume, references that can
+  not be followed and OneDrive items that can not be read are listed and not copied.
+- **Recursion** warning during the scan: a reference to a directory that contains it is ignored
+  instead of being scanned forever.
+- Integration tests for junctions: same-volume copy, recursion, a missing target and two junctions
+  that point to each other.
+- `generate_manual_tree` creates a `junctions` directory for the manual checks: a junction to the
+  same volume, a loop, two junctions that point to each other, one to a missing target and one to
+  another volume. New options `--no-junctions` and `--other-volume`. The CI checks the junctions.
+
+### Changed
+
+- `Copier::copy()` returns a `CopyResult` (`Copied`, `Failed`, `Inaccessible`) instead of `bool`.
+- `generate_manual_tree` only builds for Windows; its Linux implementation was removed.
+- `build.yml` runs the Windows tests (`tests.yml`) first, and only builds and releases the
+  executable when they pass.
+- `Copier::load()` accepts an optional `RecursionCallback`, and `Copier::getInaccessiblePaths()` lists
+  what the scan could not read.
+- The copy summary also counts the inaccessible references and the ignored recursive references.
+
+## [1.0.2] - 2026-11-02
+
+### Fixed
+
+- Resolve source and destination directory aliases before checking equality or containment,
+  and repeat validation before loading entries. Unresolvable destinations are rejected.
+- Reject reserved COM/LPT device names containing superscript digits, including extensions.
+- Scan directory trees iteratively while keeping only one search handle open at a time.
+- Preserve worker results and poll thread termination so a lost completion notification
+  does not leave the interface busy or prevent a pending close.
+
+### Added
+
+- Regression tests for extended path aliases, superscript device names, deep scans,
+  cancellation, and completion without the worker notification.
+
 ## [1.0.1] - 2026-11-01
 
 ### Changed

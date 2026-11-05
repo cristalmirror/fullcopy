@@ -37,6 +37,7 @@ using fullcopy::ID_STATUS_LABEL;
 // Window classes, and the id of the text inside a standard message box.
 const wchar_t *const MAIN_CLASS = L"FullCopyMainWindow";
 const wchar_t *const DECISION_CLASS = L"FullCopyDecisionWindow";
+const wchar_t *const WARNINGS_CLASS = L"FullCopyWarningsWindow";
 const wchar_t *const MESSAGE_BOX_CLASS = L"#32770";
 const int MESSAGE_BOX_TEXT_ID = 0xFFFF;
 
@@ -330,7 +331,7 @@ public:
                 if (name == MESSAGE_BOX_CLASS) {
                     pressMessageBoxButton(window);
                     PostMessageW(window, WM_CLOSE, 0, 0);
-                } else if (name == DECISION_CLASS) {
+                } else if (name == DECISION_CLASS || name == WARNINGS_CLASS) {
                     PostMessageW(window, WM_COMMAND, IDCANCEL, 0);
                 } else if (name == MAIN_CLASS) {
                     mainOpen = true;
@@ -388,16 +389,31 @@ void unregisterClasses() {
     const HINSTANCE instance = GetModuleHandleW(nullptr);
     UnregisterClassW(MAIN_CLASS, instance);
     UnregisterClassW(DECISION_CLASS, instance);
+    UnregisterClassW(WARNINGS_CLASS, instance);
+}
+
+// Suppress the worker notification to exercise completion through the timer alone.
+LRESULT CALLBACK suppressWorkerDone(HWND window, UINT message, WPARAM wParam,
+                                    LPARAM lParam, UINT_PTR, DWORD_PTR) {
+    if (message == fullcopy::WM_APP_WORKER_DONE) {
+        return 0;
+    }
+    return DefSubclassProc(window, message, wParam, lParam);
 }
 
 // Runs the program on this thread and the script on a driver thread, until the window closes.
-void runWithUi(const std::function<void(Driver&)> &script) {
+void runWithUi(const std::function<void(Driver&)> &script, bool suppressDone = false) {
     unregisterClasses();
     Session session = {GetCurrentThreadId(), script, std::string()};
     {
         Controller controller(GetModuleHandleW(nullptr));
         require(controller.create(SW_SHOWNOACTIVATE), "The main window could not be created");
 
+        if (suppressDone) {
+            require(SetWindowSubclass(FindWindowW(MAIN_CLASS, nullptr),
+                                      suppressWorkerDone, 1, 0) != FALSE,
+                    "Could not install notification suppression");
+        }
         const HANDLE thread = CreateThread(nullptr, 0, driverThread, &session, 0, nullptr);
         if (thread == nullptr) {
             DestroyWindow(FindWindowW(MAIN_CLASS, nullptr));
@@ -577,6 +593,25 @@ void closeDuringRename() {
     require(!fs::exists(f.destination), "Destination could not be deleted after closing");
 }
 
+void completionWithoutNotification() {
+    Fixture f;
+    write(f.source / L"file", "payload");
+    runWithUi([&](Driver &d) {
+        // Repeat to verify that completion releases the worker and allows another start.
+        for (unsigned i = 0; i < 2; ++i) {
+            d.startCopy(f.source.wstring(), (f.destination / std::to_wstring(i)).wstring());
+            const auto box = d.waitMessageBox();
+            require(box.text == FINISHED_TEXT, "Timer did not deliver the copy result");
+            require(IsWindowEnabled(d.control(ID_START_BUTTON)) != FALSE,
+                    "Timer completion left Start disabled");
+            d.closeMessageBox(box.window);
+        }
+        d.closeWithAccept();
+    }, true);
+    require(read(f.destination / L"0" / L"file") == "payload", "First copy missing");
+    require(read(f.destination / L"1" / L"file") == "payload", "Second copy missing");
+}
+
 int main() {
     INITCOMMONCONTROLSEX commonControls = {};
     commonControls.dwSize = sizeof(commonControls);
@@ -589,7 +624,8 @@ int main() {
         {"copy with quoted paths and folder release", copyWithQuotedPaths},
         {"rename a long name in the Decision window", renameLongName},
         {"skip a long directory with its content", skipLongDirectory},
-        {"close while the Decision window is open", closeDuringRename}
+        {"close while the Decision window is open", closeDuringRename},
+        {"completion without worker notification", completionWithoutNotification}
     };
     for (const auto &test : tests) {
         try {

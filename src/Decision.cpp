@@ -39,7 +39,11 @@ namespace fullcopy {
     // message loop until the window is closed. Returns true if the entry was renamed.
     bool Decision::show(HWND parent) {
         parent_ = parent;
-        registerClass(instance_);
+        if (!registerClass(instance_)) {
+            MessageBoxW(parent_, L"The rename window could not be opened.", L"FullCopy",
+                        MB_OK | MB_ICONERROR);
+            return false;
+        }
 
         const DWORD style = WS_POPUP | WS_CAPTION | WS_SYSMENU;
         const DWORD extendedStyle = WS_EX_DLGMODALFRAME;
@@ -119,8 +123,8 @@ namespace fullcopy {
         }
     }
 
-    // Registers the window class of the Decision window.
-    void Decision::registerClass(HINSTANCE instance) {
+    // Registers the window class. A class registered by an earlier Decision window is reused.
+    bool Decision::registerClass(HINSTANCE instance) {
         WNDCLASSEXW windowClass = {};
         windowClass.cbSize = sizeof(windowClass);
         windowClass.lpfnWndProc = windowProcedure;
@@ -129,8 +133,7 @@ namespace fullcopy {
         windowClass.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_BTNFACE + 1);
         windowClass.lpszClassName = CLASS_NAME;
 
-        // Fails harmlessly when the class is already registered.
-        RegisterClassExW(&windowClass);
+        return RegisterClassExW(&windowClass) != 0 || GetLastError() == ERROR_CLASS_ALREADY_EXISTS;
     }
 
     // Window procedure of the class: finds the Decision object of the window and passes it

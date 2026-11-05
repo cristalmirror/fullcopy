@@ -12,8 +12,15 @@ permissions:
   contents: read
 
 jobs:
+  tests:
+    name: Windows tests
+    # Builds on Windows and runs the Copier and UI tests, the manual test data generator and the
+    # checks of its junctions (see tests.yml).
+    uses: ./.github/workflows/tests.yml
+
   build:
     name: Build fullcopy executable
+    needs: tests
     runs-on: ubuntu-latest
 
     steps:

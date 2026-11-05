@@ -1,7 +1,11 @@
 name: Windows stability tests
+# build.yml calls this workflow for main, the pull requests to main and the version tags, so the
+# executable is only built and released after the tests pass. The push trigger covers the
+# other branches.
 on:
   push:
-  pull_request:
+    branches-ignore: [main]
+  workflow_call:
   workflow_dispatch:
 permissions:
   contents: read
@@ -24,7 +28,7 @@ jobs:
           make CXX=g++ WINDRES=windres CXXFLAGS='-std=c++17 -O2 -Wall -Wextra -Werror -Iinclude -DUNICODE -D_UNICODE -D_WIN32_WINNT=0x0601 -MMD -MP'
           g++ -std=c++17 -O2 -Wall -Wextra -Werror -DUNICODE -D_UNICODE -D_WIN32_WINNT=0x0601 -Iinclude tests/copier_tests.cpp src/Copier.cpp src/Common.cpp -o bin/copier_tests.exe -static -lshell32 -lole32 -luuid -lgdi32 -luser32
           make manual-tree CXX=g++ TOOLFLAGS='-std=c++17 -O2 -Wall -Wextra -Werror -DUNICODE -D_UNICODE -D_WIN32_WINNT=0x0601'
-          g++ -std=c++17 -O2 -Wall -Wextra -Werror -DUNICODE -D_UNICODE -D_WIN32_WINNT=0x0601 -Iinclude tests/ui_tests.cpp src/Controller.cpp src/Window.cpp src/Decision.cpp src/Copier.cpp src/Common.cpp -o bin/ui_tests.exe -static -lcomctl32 -lshell32 -lole32 -luuid -lgdi32 -luser32
+          g++ -std=c++17 -O2 -Wall -Wextra -Werror -DUNICODE -D_UNICODE -D_WIN32_WINNT=0x0601 -Iinclude tests/ui_tests.cpp src/Controller.cpp src/Window.cpp src/Decision.cpp src/Warnings.cpp src/Copier.cpp src/Common.cpp -o bin/ui_tests.exe -static -lcomctl32 -lshell32 -lole32 -luuid -lgdi32 -luser32
       - name: Run integration tests
         shell: msys2 {0}
         run: ./bin/copier_tests.exe
@@ -38,3 +42,29 @@ jobs:
           ./bin/generate_manual_tree.exe manual-tree --directories 3 --files 50 --long-files 10 --seed 1
           # A second run must refuse the existing directory.
           if ./bin/generate_manual_tree.exe manual-tree; then exit 1; fi
+          # Without junctions the tree has no junctions directory.
+          ./bin/generate_manual_tree.exe manual-tree-plain --directories 1 --files 1 --no-junctions --seed 1
+          test ! -e manual-tree-plain/junctions
+      - name: Check the junctions of the manual test data
+        shell: pwsh
+        run: |
+          $root = (Resolve-Path manual-tree).Path
+          $expected = [ordered]@{
+            'junctions\same-volume' = "$root\junction-target"
+            'junctions\loop'        = $root
+            'junctions\a\to-b'      = "$root\junctions\b"
+            'junctions\b\to-a'      = "$root\junctions\a"
+            'junctions\missing'     = "$root\missing-target"
+          }
+          foreach ($link in $expected.Keys) {
+            $item = Get-Item -Force (Join-Path $root $link)
+            if ($item.LinkType -ne 'Junction') { throw "$link is not a junction" }
+            if ($item.Target -ne $expected[$link]) { throw "$link points to $($item.Target), not $($expected[$link])" }
+          }
+          if (-not (Test-Path "$root\junctions\same-volume\file.txt")) { throw 'same-volume does not reach its target' }
+          if (Test-Path "$root\missing-target") { throw 'missing-target must not exist' }
+          # Created only when the runner has another fixed drive.
+          $other = Join-Path $root 'junctions\other-volume'
+          if (Test-Path -LiteralPath $other) {
+            if ((Get-Item -Force $other).LinkType -ne 'Junction') { throw 'other-volume is not a junction' }
+          }

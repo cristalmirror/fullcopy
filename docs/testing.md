@@ -3,8 +3,13 @@
 Automated checks run on a real Windows GitHub Actions runner. They build the
 application with warnings treated as errors and execute filesystem integration
 tests against `Copier` and UI tests against the `Controller` and its windows. They
-also build and run the tool that creates the manual test data. No application
-behavior is changed by this test suite.
+also build and run the tool that creates the manual test data, and check that every
+junction it creates exists and points to its target. No application behavior is changed
+by this test suite.
+
+`.github/workflows/tests.yml` runs on every push to a branch other than `main`.
+`.github/workflows/build.yml` calls it for `main`, the pull requests to `main` and the
+version tags, and only builds and releases the executable after it passes.
 
 ## Automated coverage
 
@@ -17,6 +22,9 @@ behavior is changed by this test suite.
 - Directory checks before a copy: empty paths, a missing source, a file as source, the same
   directory with another case, a trailing backslash or forward slashes, a destination inside the
   source, and a sibling that starts with the same name (`source2`).
+- Junctions: a junction to the same volume is copied as a real directory with its content; a
+  junction to the source itself and two junctions that point to each other are reported as
+  recursive and not copied; a junction whose target is gone is reported as inaccessible.
 
 UI tests (`tests/ui_tests.cpp`) run the real `Controller`, `Window` and `Decision` windows on
 the main thread, while a driver thread plays the user with window messages only:
@@ -41,7 +49,7 @@ To reproduce in a Windows MSYS2 MINGW64 shell with GCC and make installed, run
 ```sh
 g++ -std=c++17 -O2 -Wall -Wextra -Werror -DUNICODE -D_UNICODE -D_WIN32_WINNT=0x0601 -Iinclude tests/copier_tests.cpp src/Copier.cpp src/Common.cpp -o bin/copier_tests.exe -static -lshell32 -lole32 -luuid -lgdi32 -luser32
 ./bin/copier_tests.exe
-g++ -std=c++17 -O2 -Wall -Wextra -Werror -DUNICODE -D_UNICODE -D_WIN32_WINNT=0x0601 -Iinclude tests/ui_tests.cpp src/Controller.cpp src/Window.cpp src/Decision.cpp src/Copier.cpp src/Common.cpp -o bin/ui_tests.exe -static -lcomctl32 -lshell32 -lole32 -luuid -lgdi32 -luser32
+g++ -std=c++17 -O2 -Wall -Wextra -Werror -DUNICODE -D_UNICODE -D_WIN32_WINNT=0x0601 -Iinclude tests/ui_tests.cpp src/Controller.cpp src/Window.cpp src/Decision.cpp src/Warnings.cpp src/Copier.cpp src/Common.cpp -o bin/ui_tests.exe -static -lcomctl32 -lshell32 -lole32 -luuid -lgdi32 -luser32
 ./bin/ui_tests.exe
 ```
 
@@ -66,7 +74,7 @@ all cases. Do not mark unexecuted checks as passed.
 | Filesystem errors | Read-only destination, locked source file, denied permissions and exhausted disposable test volume. | Failures are reported without a crash, hang or false successful summary. Never fill the system volume. |
 | Integrity and repetition | Copy a tree containing at least 10,000 files (the [test data](#test-data) tree) and a multi-GB file; compare relative paths and SHA-256 hashes. Repeat 20 times. | All expected files match, skipped items are absent, and the process remains usable. |
 | Resource lifetime | Monitor private bytes, handles and GDI objects over 100 Browse/copy/rename cycles, after warming up. | No sustained cycle-by-cycle growth. Capture counts and investigate growth; a single snapshot is insufficient. |
-| Long paths and links | Use source paths over 260 characters (the [test data](#test-data) tree), a deeply nested tree, and a junction loop in a disposable fixture. | Long names can be shortened/skipped; no recursion loop or crash. Document supported depth. Junctions are copied as empty directories. |
+| Long paths and links | Use source paths over 260 characters (the [test data](#test-data) tree), a deeply nested tree, and a junction loop in a disposable fixture. | Long names can be shortened/skipped; no recursion loop or crash. Document supported depth. A junction to the source volume is copied as a real directory; a junction loop shows the **Recursion** window during the scan; a junction to another volume or to a missing target is listed in the **Referencia Inaccesible** window after the copy and is not created in the destination. |
 
 ### Test data
 
@@ -76,6 +84,20 @@ names of 245 to 255 characters, so their destination paths go over the Windows l
 **Name too long** window appears. A single name can not be longer than 255 characters, so it is
 the full path that goes over 260 characters. Every file contains a short message of 100
 characters at most. The tree is written with the `\\?\` prefix.
+
+It also creates a `junctions` directory with one junction for each case of the *Long paths and
+links* check:
+
+| Junction | Target | Expected result |
+|---|---|---|
+| `junctions\same-volume` | `junction-target` | Copied as a real directory with `file.txt`. |
+| `junctions\loop` | The root of the tree | **Recursion** window during the scan. |
+| `junctions\a\to-b` and `junctions\b\to-a` | Each other's directory | **Recursion** window twice, for `a\to-b\to-a` and `b\to-a\to-b`. |
+| `junctions\missing` | `missing-target`, which does not exist | Listed in **Referencia Inaccesible** after the copy. |
+| `junctions\other-volume` | The root of another fixed drive, or `--other-volume DIR` | Listed in **Referencia Inaccesible** after the copy. Not created when there is no other volume. |
+
+The ignored junctions must not exist in the destination. Junctions need an NTFS volume; use
+`--no-junctions` to create the tree without them.
 
 Build it with `make docker-manual-tree` (or `make manual-tree` with MinGW-w64), copy
 `bin/generate_manual_tree.exe` to the Windows test machine, and run it with a path that does not
@@ -87,11 +109,12 @@ generate_manual_tree.exe C:\fullcopy-source
 
 It prints the seed, how many **Name too long** windows to expect, and the command to delete the
 tree. Run `generate_manual_tree.exe --help` for the options: `--directories`, `--files`,
-`--long-directories`, `--long-files` and `--seed` (the same seed creates the same tree). Write
-the seed in the record of each check, so the same tree can be created again.
+`--long-directories`, `--long-files`, `--seed` (the same seed creates the same tree),
+`--no-junctions` and `--other-volume`. Write the seed in the record of each check, so the same
+tree can be created again.
 
-The tool creates one level of directories with small text files only. Prepare the deeply nested
-tree, the junction loop and the multi-GB file by hand.
+The tool only runs on Windows. It creates one level of directories with small text files only.
+Prepare the deeply nested tree and the multi-GB file by hand.
 
 For memory corruption investigation, repeat the UI and stress cases under Windows
 Application Verifier and full page heap when available. Save diagnostic logs and

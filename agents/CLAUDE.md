@@ -27,9 +27,11 @@ project and makes the decisions; you help by writing and explaining code.
 - C++17 with the Win32 API, cross-compiled with MinGW-w64 (`make docker`).
 - Class definitions in `include/` (`.hpp`), implementations in `src/` (`.cpp`).
 - All code, identifiers and comments are written in English.
-- Code style: an opening brace that follows a closing parenthesis, `else` or `do` goes on the
-  same line, separated by one space: `) {`, `) const {`, `} else {`, `} else if (...) {`, `do {`,
-  `} while (...);`. Braces of `namespace`, `class`, `struct` and `enum` stay on their own line.
+- Code style: every opening brace goes on the same line as the code before it, separated by one
+  space: `) {`, `) const {`, `} else {`, `} else if (...) {`, `do {`, `} while (...);`,
+  `namespace fullcopy {`, `class Window {`, `struct CopyEntry {`, `enum class RenameResult {`.
+- In declarations, `*` and `&` go next to the name, not the type: `int *a`, `int &b`,
+  `const std::wstring &path` (not `int* a`, `int& b`).
 - Follow the class design in `docs/class_diagram.md`.
 
 ## Co-authorship

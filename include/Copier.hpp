@@ -3,6 +3,7 @@
 
 #include <atomic>
 #include <cstddef>
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -25,13 +26,21 @@ namespace fullcopy {
         DestinationUnavailable
     };
 
+    // Result of copying one entry.
+    enum class CopyResult {
+        Copied,       // Copied, or nothing to do because the entry is skipped.
+        Failed,
+        Inaccessible  // The source is a OneDrive file that can not be read now.
+    };
+
     // Result of checking the source and destination directories before a copy.
     enum class DirectoryResult {
         Ok,
         Empty,
         SourceNotFound,
         SameDirectory,
-        DestinationInsideSource
+        DestinationInsideSource,
+        DestinationUnavailable
     };
 
     // Model: scans the source directory, checks and renames the entries, and copies them.
@@ -53,18 +62,28 @@ namespace fullcopy {
         // and the destination is neither the source nor inside it.
         DirectoryResult checkDirectories() const;
 
+        // Called during the scan with the relative source path of a reference that points to a
+        // directory containing it. That reference is not copied.
+        using RecursionCallback = std::function<void(const std::wstring &relativePath)>;
+
         // Scans the source directory and all its subdirectories.
-        // Returns false on cancellation, any scan error, or an invalid destination.
+        // A reference (junction or symbolic link) to the source volume is scanned like a real
+        // directory or file. A reference to another volume, a reference that can not be followed
+        // and a OneDrive directory that can not be read are not copied: they are listed by
+        // getInaccessiblePaths(). A reference to a directory that contains it is passed to
+        // onRecursion and not copied.
+        // Returns false on cancellation, any other scan error, or an invalid destination.
         // A failed scan discards all partial entries.
-        bool load(std::atomic_bool *cancellation = nullptr);
+        bool load(std::atomic_bool *cancellation = nullptr, const RecursionCallback &onRecursion = nullptr);
 
         // Checks that the destination path of an entry is short enough to be copied.
         // Updates sizeApproved_ and tempSize_ and returns sizeApproved_.
         bool check(std::size_t index);
 
         // Copies one entry without overwriting existing files. Cancellation removes
-        // the partial file created by the current copy operation.
-        bool copy(std::size_t index, std::atomic_bool *cancellation = nullptr);
+        // the partial file created by the current copy operation. Returns Inaccessible for a
+        // OneDrive file that can not be read now.
+        CopyResult copy(std::size_t index, std::atomic_bool *cancellation = nullptr);
 
         // Gives a new destination name to an entry. When the entry is a directory,
         // everything inside it is moved under the new name too.
@@ -86,9 +105,13 @@ namespace fullcopy {
         bool isSizeApproved() const;
         std::size_t getTempSize() const;
 
+        // Relative source paths that the last scan could not read (see load()).
+        const std::vector<std::wstring> &getInaccessiblePaths() const;
+
     private:
         std::size_t getPathLengthLimit(std::size_t index) const;
-        bool scanDirectory(const std::wstring &relativePath, std::atomic_bool *cancellation);
+        bool scanDirectory(const std::wstring &relativePath, std::atomic_bool *cancellation,
+                           const RecursionCallback &onRecursion);
         std::wstring getFullSourcePath(const std::wstring &relativePath) const;
         static std::wstring normalizePath(const std::wstring &path);
         static bool isValidName(const std::wstring &name);
@@ -99,6 +122,7 @@ namespace fullcopy {
         std::wstring sourceRoot_;
         std::wstring destinationRoot_;
         std::vector<CopyEntry> entries_;
+        std::vector<std::wstring> inaccessible_;
     };
 } // namespace fullcopy
 

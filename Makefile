@@ -3,12 +3,13 @@
 #   make docker   Builds the Docker image and compiles inside it (recommended).
 #   make          Compiles directly (needs x86_64-w64-mingw32-g++ installed).
 #   make clean    Removes the build files.
-#   make manual-tree         Builds the tool that creates the manual test data.
+#   make manual-tree         Builds the Windows tool that creates the manual test data
+#                            (long names and junctions).
 #   make docker-manual-tree  Builds that tool inside Docker.
 #
 # The executable name includes the version: bin/fullcopy-$(VERSION).exe
 
-VERSION   := 1.0.1
+VERSION   := 1.0.2
 
 CXX       := x86_64-w64-mingw32-g++
 WINDRES   := x86_64-w64-mingw32-windres

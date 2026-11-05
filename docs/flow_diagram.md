@@ -20,7 +20,7 @@ The colors show the MVC layer of each action:
 
 | Color | Layer | Classes |
 |---|---|---|
-| Blue | View | `Window`, `Decision` |
+| Blue | View | `Window`, `Decision`, `Warnings` |
 | Orange | Controller | `Controller` |
 | Green | Model | `Copier` |
 | Grey | Program entry | `main.cpp` |
@@ -48,24 +48,24 @@ flowchart TD
         mSetDirs["Controller: trim the paths<br/>Copier::setDirectories()"]:::controller
         mCheckDirs{"Copier::checkDirectories()<br/>returns Ok?"}:::model
         mDirError["Window::showDirectoryError()"]:::view
-        mStarted["Window::showCopyStarted()"]:::view
+        mStarted["Controller: establish completion timer<br/>Window::showCopyStarted()"]:::view
         mThread["Controller: CreateThread(copyThread)"]:::controller
         mThreadOk{"Thread created?"}
         mStartFailed["Window::showStartFailed()"]:::view
         mKeep["Window: the message loop keeps running<br/>and shows the progress and the current path"]:::view
-        mAccept>"WM_APP_COPY_FINISHED<br/>or WM_APP_COPY_FAILED received"]:::signal
-        mDone["Controller::onCopyFinished()<br/>or Controller::onCopyFailed()"]:::controller
+        mAccept>"WM_APP_WORKER_DONE or timer<br/>observes thread termination"]:::signal
+        mDone["Controller::pollWorker()"]:::controller
         mFinish["Controller::finishCopy():<br/>wait for the copy thread"]:::controller
         mPending{"Close pending?"}
         mClose["Window::close()<br/>(see diagram 3)"]:::view
-        mSummary["Window::showCopyFinished()<br/>or Window::showCopyFailed()"]:::view
+        mSummary["Window::showCopyFinished(): Warnings window<br/>with the inaccessible paths, then the summary;<br/>or Window::showCopyFailed()"]:::view
     end
 
     subgraph copyThread ["Copy thread: Controller::runCopy()"]
         direction TB
-        cLoad["Copier::load(): create the destination<br/>and scan the source"]:::model
+        cLoad["Copier::load(): validate directories,<br/>create destination and scan iteratively<br/>(references: see diagram 4)"]:::model
         cLoadOk{"Scan OK?"}
-        cFailed>"post WM_APP_COPY_FAILED"]:::signal
+        cFailed>"store failed result<br/>post WM_APP_WORKER_DONE"]:::signal
         cMore{"More entries<br/>and not cancelled?"}
         cCurrent>"post WM_APP_CURRENT_ENTRY"]:::signal
         cFits{"Copier::check():<br/>does the path fit?"}:::model
@@ -74,11 +74,11 @@ flowchart TD
         cRenamed{"Renamed?"}
         cSkip["Copier::skip(): the entry<br/>and all its content"]:::model
         cCancelled{"Cancelled?"}
-        cCopy["Copier::copy(): create the directory<br/>or copy the file"]:::model
+        cCopy["Copier::copy(): create the directory<br/>or copy the file. Failed is counted;<br/>Inaccessible (OneDrive) is listed"]:::model
         cProgress>"post WM_APP_PROGRESS<br/>if the percentage changed"]:::signal
         cEmpty{"No entries at all?"}
         cFull>"post WM_APP_PROGRESS (100)"]:::signal
-        cFinished>"post WM_APP_COPY_FINISHED<br/>(failed and skipped counts)"]:::signal
+        cFinished>"store success, failed, skipped and recursion counts<br/>and the inaccessible paths<br/>post WM_APP_WORKER_DONE"]:::signal
         cEnd(("✕")):::flowFinal
     end
 
@@ -133,9 +133,13 @@ flowchart TD
 
 Notes:
 
-- A skipped entry still goes through `Copier::copy()`, which does nothing for it and returns `true`.
-- After a cancellation the loop stops and the thread still posts `WM_APP_COPY_FINISHED`. A
-  cancellation during the scan makes `Copier::load()` fail, so the thread posts `WM_APP_COPY_FAILED`.
+- A skipped entry still goes through `Copier::copy()`, which does nothing for it and returns
+  `CopyResult::Copied`.
+- The worker stores its result before posting `WM_APP_WORKER_DONE`. Cancellation during
+  scanning records a failed scan; cancellation during copying preserves the partial counts.
+- Both the notification and the fallback timer call `Controller::pollWorker()`. It finishes
+  the operation only after the worker thread is signalled. The timer is established before
+  creating the worker; if timer creation fails, the copy does not start.
 - The main window passes every `WM_APP_*` message to the `Controller` (`Window::handleMessage()`).
 
 ## 2. Rename an entry
@@ -207,7 +211,7 @@ flowchart TD
         xRunning{"Copy thread running?"}
         xCancel["Controller: cancelRequested_ = true<br/>and closePending_ = true"]:::controller
         xCancelling["Window::showCancelling()"]:::view
-        xWaitMessage>"WM_APP_COPY_FINISHED<br/>or WM_APP_COPY_FAILED received"]:::signal
+        xWaitMessage>"WM_APP_WORKER_DONE or timer<br/>observes thread termination"]:::signal
         xFinish["Controller::finishCopy():<br/>wait for the copy thread"]:::controller
         xClose["Window::close(): DestroyWindow()"]:::view
         xDestroy["Window: WM_DESTROY → PostQuitMessage()"]:::view
@@ -218,7 +222,7 @@ flowchart TD
     subgraph copyThread ["Copy thread"]
         direction TB
         xStops["Sees cancelRequested_ between entries<br/>or inside CopyFileExW, and stops"]:::controller
-        xPost>"post WM_APP_COPY_FINISHED<br/>or WM_APP_COPY_FAILED"]:::signal
+        xPost>"store result<br/>post WM_APP_WORKER_DONE"]:::signal
         xThreadEnd(("✕")):::flowFinal
     end
 
@@ -248,4 +252,72 @@ Notes:
   `Controller::finishCopy()`, when the copy thread has ended, so the `Copier` is never destroyed
   while the thread uses it.
 - Closing can take a moment: the copy thread stops at the next check of the cancellation flag.
-- While the **Name too long** window is open, the main window is disabled, so it can not be closed.
+- While the **Name too long** or the **Recursion** window is open, the main window is disabled, so
+  it can not be closed.
+
+## 4. References during the scan
+
+`Copier::scanDirectory()` decides what to do with every junction and symbolic link it finds. They
+are *name surrogate* reparse points: they point to another path. Other reparse points, like OneDrive
+files and directories, are the real item and are scanned like normal ones.
+
+```mermaid
+flowchart TD
+    jStart((" ")):::initial
+
+    subgraph copyThread ["Copy thread: Copier::scanDirectory()"]
+        direction TB
+        jFound["Copier: an item of the directory being scanned"]:::model
+        jReference{"Junction or symbolic link?<br/>(name surrogate reparse tag)"}:::model
+        jNormal["Scanned like a normal file or directory.<br/>A OneDrive directory that can not be listed<br/>goes to getInaccessiblePaths()"]:::model
+        jSameVolume{"getRealPath(): the target exists<br/>on the volume of the source?"}:::model
+        jInaccessible["Added to getInaccessiblePaths():<br/>not copied, nothing is created"]:::model
+        jRecursive{"Is the target a directory being scanned,<br/>or does it contain one?"}:::model
+        jFollow["Scanned like a real directory or file.<br/>If it can not be listed, it goes to<br/>getInaccessiblePaths()"]:::model
+        jSend>"RecursionCallback: SendMessage<br/>WM_APP_RECURSION_FOUND and wait"]:::signal
+        jIgnored["Not copied: the scan goes on"]:::model
+        jNext(("✕")):::flowFinal
+    end
+
+    subgraph mainThread ["Main thread"]
+        direction TB
+        jReceive>"WM_APP_RECURSION_FOUND received"]:::signal
+        jOnRecursion["Controller::onRecursionFound()"]:::controller
+        jPending{"Close pending?"}
+        jWarn["Window::showWarning(Recursion):<br/>Warnings window with the path"]:::view
+        jAccept["User presses Aceptar, Enter, Escape or X"]:::view
+        jReturn>"return: the scan continues"]:::signal
+    end
+
+    jStart --> jFound --> jReference
+    jReference -->|no| jNormal --> jNext
+    jReference -->|yes| jSameVolume
+    jSameVolume -->|no| jInaccessible --> jNext
+    jSameVolume -->|yes| jRecursive
+    jRecursive -->|no| jFollow --> jNext
+    jRecursive -->|yes| jSend
+    jSend -.-> jReceive --> jOnRecursion --> jPending
+    jPending -->|yes| jReturn
+    jPending -->|no| jWarn --> jAccept --> jReturn
+    jReturn -.-> jIgnored --> jNext
+
+    classDef initial fill:#000,stroke:#000
+    classDef flowFinal fill:#fff,stroke:#000,color:#000
+    classDef view fill:#dbeafe,stroke:#1d4ed8,color:#0f172a
+    classDef controller fill:#ffedd5,stroke:#c2410c,color:#0f172a
+    classDef model fill:#dcfce7,stroke:#15803d,color:#0f172a
+    classDef signal fill:#fef9c3,stroke:#a16207,color:#0f172a
+```
+
+Notes:
+
+- Two paths are on the same volume when their real paths (`GetFinalPathNameByHandleW` with
+  `VOLUME_NAME_GUID`) start with the same `\\?\Volume{...}`. A network source has no volume GUID,
+  so none of its references is followed.
+- The scan keeps the real path of every directory it enters, with the directory that contains it.
+  A target that is one of those directories, or contains one, is recursive. This also finds two
+  junctions that point to each other.
+- If the copy thread is cancelled, `Controller::runCopy()` does not send the message.
+- When the copy ends, the paths from `getInaccessiblePaths()` and the OneDrive files whose copy
+  returned `CopyResult::Inaccessible` are shown together in the **Referencia Inaccesible** window
+  (`Warnings` with `WarningKind::InaccessibleReference`), before the summary.
