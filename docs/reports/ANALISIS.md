@@ -1,10 +1,10 @@
 # Pruebas pendientes de FullCopy
 
-Actualizado: 2026-11-03.
+Actualizado: 2026-11-05.
 
 Este documento contiene únicamente escenarios pendientes de validación sobre el código actual. Cada caso requiere ejecución y evidencia; los criterios de aceptación describen el resultado esperado, no un resultado ya obtenido. Algunos casos requieren inyección de fallos y pueden revelar defectos que aún necesitan corrección.
 
-Después de cada tabla, la sección **Código relacionado** indica, para cada prueba, el bloque de código que ejercita y qué revisar en él. Las líneas corresponden al commit `f4c4804`; si el código cambia, buscar por el nombre de la función.
+Después de cada tabla, la sección **Código relacionado** indica, para cada prueba, el bloque de código que ejercita y qué revisar en él. Las líneas corresponden al commit `80269c3`; si el código cambia, buscar por el nombre de la función.
 
 ## Manejo de errores y cierre
 
@@ -26,7 +26,7 @@ Después de cada tabla, la sección **Código relacionado** indica, para cada pr
 #### Error de `GetMessageW`
 
 - [`src/Window.cpp:85-94`](../../src/Window.cpp#L85-L94), `Window::run()`: bucle principal.
-- [`src/Decision.cpp:74-94`](../../src/Decision.cpp#L74-L94), `Decision::show()`: bucle del diálogo de renombrado.
+- [`src/Decision.cpp:78-98`](../../src/Decision.cpp#L78-L98), `Decision::show()`: bucle del diálogo de renombrado.
 - [`src/Warnings.cpp:76-96`](../../src/Warnings.cpp#L76-L96), `Warnings::show()`: el mismo bucle en la ventana de avisos.
 
 ```cpp
@@ -65,7 +65,7 @@ Qué revisar:
 
 - [`src/Window.cpp:61-80`](../../src/Window.cpp#L61-L80), `Window::create()`: crea la ventana principal y llama a `createControls()`.
 - [`src/Window.cpp:193-316`](../../src/Window.cpp#L193-L316), `Window::createControls()`.
-- [`src/Decision.cpp:59-72`](../../src/Decision.cpp#L59-L72) y [`src/Decision.cpp:167-221`](../../src/Decision.cpp#L167-L221): ventana y controles del diálogo **Name too long**.
+- [`src/Decision.cpp:63-76`](../../src/Decision.cpp#L63-L76) y [`src/Decision.cpp:170-224`](../../src/Decision.cpp#L170-L224): ventana y controles del diálogo **Name too long**.
 - [`src/Controller.cpp:242-252`](../../src/Controller.cpp#L242-L252), `Controller::runCopy()`: qué hace la copia con el resultado del diálogo.
 
 ```cpp
@@ -98,23 +98,32 @@ Qué revisar:
 
 #### Fallo al registrar la clase del diálogo
 
-- [`src/Decision.cpp:122-134`](../../src/Decision.cpp#L122-L134), `Decision::registerClass()`, llamada sin comprobar desde [`src/Decision.cpp:42`](../../src/Decision.cpp#L42).
+- [`src/Decision.cpp:126-137`](../../src/Decision.cpp#L126-L137), `Decision::registerClass()`, comprobada desde [`src/Decision.cpp:42-46`](../../src/Decision.cpp#L42-L46).
 
 ```cpp
-void Decision::registerClass(HINSTANCE instance) {
+bool Decision::registerClass(HINSTANCE instance) {
     WNDCLASSEXW windowClass = {};
     // ...
     windowClass.lpszClassName = CLASS_NAME;
 
-    // Fails harmlessly when the class is already registered.
-    RegisterClassExW(&windowClass);
+    return RegisterClassExW(&windowClass) != 0 || GetLastError() == ERROR_CLASS_ALREADY_EXISTS;
+}
+```
+
+```cpp
+// Decision::show()
+if (!registerClass(instance_)) {
+    MessageBoxW(parent_, L"The rename window could not be opened.", L"FullCopy",
+                MB_OK | MB_ICONERROR);
+    return false;
 }
 ```
 
 Qué revisar:
 
-- El resultado de `RegisterClassExW` se ignora, sea cual sea el error. Si el registro falla de verdad, el problema aparece después como un fallo de `CreateWindowExW`, que se cuenta como omisión (ver la prueba anterior).
-- El comportamiento esperado ya está en `Warnings::registerClass()` ([`src/Warnings.cpp:124-134`](../../src/Warnings.cpp#L124-L134)): `return RegisterClassExW(&windowClass) != 0 || GetLastError() == ERROR_CLASS_ALREADY_EXISTS;`. La ventana principal ([`src/Window.cpp:50-52`](../../src/Window.cpp#L50-L52)) devuelve `false` ante cualquier error.
+- Solo se tolera `ERROR_CLASS_ALREADY_EXISTS`, igual que en `Warnings::registerClass()` ([`src/Warnings.cpp:124-134`](../../src/Warnings.cpp#L124-L134)). Cualquier otro error muestra un `MessageBoxW` sobre la ventana principal.
+- El mensaje no incluye el código de `GetLastError()`.
+- `show()` devuelve `false`, el mismo valor que cuando el usuario cierra la ventana: la copia sigue contando el fallo como omisión (ver la prueba anterior).
 
 #### Fallos del selector de carpetas
 
@@ -237,7 +246,7 @@ Qué revisar:
 #### Excepciones en callbacks
 
 - [`include/Common.hpp:50-76`](../../include/Common.hpp#L50-L76), `dispatchWindowMessage()`.
-- Los tres `windowProcedure`: [`src/Window.cpp:117-124`](../../src/Window.cpp#L117-L124), [`src/Decision.cpp:138-141`](../../src/Decision.cpp#L138-L141) y [`src/Warnings.cpp:138-141`](../../src/Warnings.cpp#L138-L141).
+- Los tres `windowProcedure`: [`src/Window.cpp:117-124`](../../src/Window.cpp#L117-L124), [`src/Decision.cpp:141-144`](../../src/Decision.cpp#L141-L144) y [`src/Warnings.cpp:138-141`](../../src/Warnings.cpp#L138-L141).
 
 ```cpp
 // dispatchWindowMessage()
@@ -252,7 +261,7 @@ return (self->*handler)(message, wParam, lParam);
 Qué revisar:
 
 - Ni `dispatchWindowMessage()` ni los `windowProcedure` tienen `try`/`catch`: una excepción de un handler sale por el `WndProc` y atraviesa `DispatchMessageW`, algo que Windows no admite.
-- Handlers que reservan memoria y pueden lanzar `std::bad_alloc`: `Window::askNewName()` (`new Decision`, [`src/Window.cpp:373-379`](../../src/Window.cpp#L373-L379)), `Controller::onRecursionFound()` ([`src/Controller.cpp:129-136`](../../src/Controller.cpp#L129-L136)), `Controller::onCurrentEntry()` ([`src/Controller.cpp:139-145`](../../src/Controller.cpp#L139-L145)), `Window::showCopyFinished()` ([`src/Window.cpp:435-465`](../../src/Window.cpp#L435-L465)) y `Decision::onAccept()` ([`src/Decision.cpp:225-265`](../../src/Decision.cpp#L225-L265)).
+- Handlers que reservan memoria y pueden lanzar `std::bad_alloc`: `Window::askNewName()` (`new Decision`, [`src/Window.cpp:373-379`](../../src/Window.cpp#L373-L379)), `Controller::onRecursionFound()` ([`src/Controller.cpp:129-136`](../../src/Controller.cpp#L129-L136)), `Controller::onCurrentEntry()` ([`src/Controller.cpp:139-145`](../../src/Controller.cpp#L139-L145)), `Window::showCopyFinished()` ([`src/Window.cpp:435-465`](../../src/Window.cpp#L435-L465)) y `Decision::onAccept()` ([`src/Decision.cpp:228-268`](../../src/Decision.cpp#L228-L268)).
 
 #### Destrucción de ventanas en rutas excepcionales
 
@@ -566,7 +575,7 @@ Qué revisar:
 #### Interacción real con teclado y ratón
 
 - [`src/Window.cpp:85-94`](../../src/Window.cpp#L85-L94) y [`src/Window.cpp:128-190`](../../src/Window.cpp#L128-L190): bucle con `IsDialogMessageW` y `Window::handleMessage()`.
-- [`src/Decision.cpp:143-164`](../../src/Decision.cpp#L143-L164), `Decision::handleMessage()`.
+- [`src/Decision.cpp:146-167`](../../src/Decision.cpp#L146-L167), `Decision::handleMessage()`.
 - [`src/Warnings.cpp:143-160`](../../src/Warnings.cpp#L143-L160), `Warnings::handleMessage()`.
 
 ```cpp
@@ -662,7 +671,7 @@ No hay un bloque único. Esto es lo que se crea y se libera en cada ciclo:
 Qué revisar:
 
 - Solo hay un objeto de fuente, compartido por todas las ventanas, así que el número de objetos GDI no debería crecer con cada ventana abierta.
-- `Decision::registerClass()` se llama en cada renombrado; desde la segunda vez falla porque la clase ya existe, sin efecto.
+- `Decision::registerClass()` se llama en cada renombrado; desde la segunda vez `RegisterClassExW` falla con `ERROR_CLASS_ALREADY_EXISTS` y la clase existente se reutiliza.
 - `entries_.clear()` vacía la lista pero no libera su capacidad: después de una copia grande, los bytes privados pueden quedarse altos sin que haya crecimiento por ciclo.
 
 #### Corrupción de memoria

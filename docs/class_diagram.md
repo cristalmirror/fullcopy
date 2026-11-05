@@ -89,7 +89,7 @@ classDiagram
         +~Decision()
         +show(HWND parent) bool
         +selfDestroy() void
-        -registerClass(HINSTANCE instance)$ void
+        -registerClass(HINSTANCE instance)$ bool
         -windowProcedure(HWND, UINT, WPARAM, LPARAM)$ LRESULT
         -handleMessage(UINT, WPARAM, LPARAM) LRESULT
         -createControls() void

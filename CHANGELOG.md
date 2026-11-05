@@ -13,6 +13,8 @@ and this project uses [Semantic Versioning](https://semver.org/).
   A reference to the same volume as the source is now copied as a real directory or file.
 - OneDrive directories were copied as empty directories, because they are reparse points too.
   They are now scanned and copied like normal directories.
+- The **Name too long** window ignored a failed registration of its window class. It now shows an
+  error and the entry is skipped.
 
 ### Added
 
