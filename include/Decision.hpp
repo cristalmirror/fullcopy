@@ -38,7 +38,7 @@ namespace fullcopy {
     private:
         static const wchar_t *CLASS_NAME;
 
-        static void registerClass(HINSTANCE instance);
+        static bool registerClass(HINSTANCE instance);
         static LRESULT CALLBACK windowProcedure(HWND window, UINT message, WPARAM wParam, LPARAM lParam);
         LRESULT handleMessage(UINT message, WPARAM wParam, LPARAM lParam);
 
